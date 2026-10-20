@@ -1,9 +1,5 @@
 # Setup contribution bridge cho nhiều repo
 
-> Luồng hiện tại: A chỉ gửi code bằng **Actions → Notify contribution bridge → Run workflow** với PR number và head SHA. Commit mới không tự sang B. B events/schedule vẫn đồng bộ lịch sử đã chấp nhận và phản hồi. Xem [hướng dẫn A/B](github-app-workflows-ab.md).
->
-> Nâng cấp: App Sync cần **Actions: read**, admin A phải chấp nhận quyền mới của installation. Deploy controller trước notifier; giữ `BRIDGE_ENABLED=false` trong lúc thay đổi. Notifier phải có trên default branch `main` của A; cặp `xora-resolve-be` dùng `dev` để contribute/sync nhưng vẫn dispatch từ `main`. Bộ Bash bootstrap hiện dành cho cặp main/main; cặp dev và repo đang hoạt động cần migration được SRE review, không chạy lại bootstrap.
-
 Nếu B đã có code, A đã có repo rỗng cùng tên và máy có SSH hai bên, dùng [hướng dẫn setup bằng Bash](github-app-quick-setup.md). Thư mục [setup/](setup/) có 5 script riêng: `01-init.sh` → `02-prepare.sh` → cài App → `03-apply.sh` → B duyệt PR setup → `04-activate.sh` → `05-verify.sh`. Đã có sẵn 7 link repo B; apply tự đưa code B/main vào A/main rỗng và cấu hình các repo. Tài liệu dưới đây giải thích cấu trúc và cấu hình tương ứng, không cần làm lại thủ công những bước script đã thực hiện.
 
 ## 1. Kiến trúc dùng chung
@@ -39,7 +35,7 @@ Chỉ dùng **Create a merge commit** cho PR contribution để giữ nguyên SH
 
 ## 2. Chuẩn bị và tạo ba App — làm một lần
 
-Chuẩn bị admin hai org, Actions được bật, Git và Node.js 24 trên máy setup. Tải repo tài liệu này vào thư mục `bridge-docs`; các lệnh dưới đây dùng PowerShell. Các ví dụ bootstrap dưới đây dành cho cặp main/main. Cặp dev dùng registry và entrypoint default branch theo hướng dẫn A/B.
+Chuẩn bị admin hai org, Actions được bật, Git và Node.js 24 trên máy setup. Tải repo tài liệu này vào thư mục `bridge-docs`; các lệnh dưới đây dùng PowerShell. Mọi repo dùng nhánh chính `main`.
 
 Tại org B: **Settings → Developer settings → GitHub Apps → New GitHub App**. Tạo ba App, tắt webhook; không cần callback/user authorization/device flow.
 
@@ -51,7 +47,7 @@ Tại org B: **Settings → Developer settings → GitHub Apps → New GitHub Ap
 | Contents | Read and write | Read and write | No access |
 | Pull requests | Read and write | Read and write | No access |
 | Workflows | Read and write | No access | No access |
-| Actions | Read-only | No access | Read and write |
+| Actions | No access | No access | Read and write |
 | Metadata | Read-only | Read-only | Read-only |
 | Quyền khác / org permissions | No access | No access | No access |
 
@@ -187,9 +183,9 @@ git commit -m "Notify contribution bridge"
 git push -u origin setup/notify-controller
 ```
 
-Thay `CONTRIBUTION_BRANCH` bằng main (hoặc dev theo registry). Kiểm tra không còn placeholder. Maintainer B mở PR và merge; push B/main tự gọi controller. Bot đưa **cùng notifier** về A/main, không tạo commit cấu hình độc lập tại A. Kiểm tra file đã có trên A/main trước khi developer mở PR.
+Kiểm tra không còn placeholder. Maintainer B mở PR và merge; push B/main tự gọi controller. Bot đưa **cùng notifier** về A/main, không tạo commit cấu hình độc lập tại A. Kiểm tra file đã có trên A/main trước khi developer mở PR.
 
-Notifier không checkout/chạy code PR. A chỉ dispatch thủ công PR + SHA; review/comment/push tại B gọi controller để reconcile. Comment A được sao chép ở lần reconcile sau; không gửi code mới. Event do bot sao chép comment/đóng PR bị bỏ qua để tránh lặp. Push bằng `GITHUB_TOKEN` không tự kích hoạt workflow push tiếp theo: automation ghi B/main phải dùng App token phù hợp hoặc dispatch riêng. [Quy tắc trigger](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
+Notifier không checkout/chạy code PR. PR/commit mới, review và comment từ người dùng tại A/B gọi controller; push main chỉ kích hoạt ở B. Event do bot sao chép comment/đóng PR bị bỏ qua để tránh lặp. Push bằng `GITHUB_TOKEN` không tự kích hoạt workflow push tiếp theo: automation ghi B/main phải dùng App token phù hợp hoặc dispatch riêng. [Quy tắc trigger](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
 
 ## 5. Quyền và guard trước khi sử dụng
 
@@ -201,7 +197,7 @@ App permissions không đủ để cưỡng chế quyền theo nhánh. Với rep
 | **Từng A/main** | Chỉ App A được cập nhật; developer không push/merge. Cho App A direct push và force-push để recovery, không áp PR/linear history chặn lịch sử B. Nếu dùng ruleset, bypass chỉ App A cho rule cần thiết; chặn deletion ở rule riêng không bypass |
 | **Controller/main** | Chỉ B quản lý; review thay đổi scripts/workflows, không cho A sửa/chạy code tùy ý |
 | **CI contribution tại B** | Incoming PR cùng repo B có thể tiếp cận secrets nếu workflow truyền vào. Build/test code A với quyền tối thiểu, không key/token ghi; bảo vệ cả script mà workflow gọi |
-| **Workflow ứng dụng B được sao sang A** | Guard mọi job pipeline ứng dụng chỉ dành cho B bằng `if: github.repository == 'B_OWNER/B_REPO'`, áp dụng trước bootstrap. Notifier chủ động cho phép cả A/B |
+| **Workflow ứng dụng B được sao sang A** | Guard job deploy/CD chỉ dành cho B bằng `if: github.repository == 'B_OWNER/B_REPO'`, áp dụng trước bootstrap. Notifier chủ động cho phép cả A/B |
 
 Controller kiểm tra repo private và token chỉ thấy đúng repo của cặp; chỉ push incoming branch ở B, không force-push/merge B. Job có key không checkout/chạy contribution. Tests chạy trước khi tạo token; registry và controller lấy từ revision main tin cậy.
 
@@ -215,9 +211,9 @@ Developer clone repo A bằng tài khoản của mình, tạo feature branch và
 
 | Bước | Kết quả cần thấy |
 |---|---|
-| A mở PR → push thêm commit | Chưa có PR B; Run workflow notifier với PR + SHA mới được chuyển |
+| A mở PR → push thêm commit | Event chọn đúng `Reconcile <id>`; cùng một PR B được mở/cập nhật, giữ SHA đóng góp |
 | B Request changes có nội dung/line comments | A nhận findings, file/dòng/SHA và nguồn review |
-| A sửa code, comment findings đã xử lý | B giữ SHA cũ; Run workflow với SHA mới để cập nhật code. Comment sao chép khi reconcile |
+| A sửa code, comment findings đã xử lý | B nhận commit mới và bản sao Conversation comment |
 | B approve/comment | A thấy bản sao; approval không tự merge |
 | B **Create a merge commit** | Notifier B tự chạy; controller sync A/main đúng B/main; commit gốc giữ SHA/author/committer; PR A đóng |
 | B đóng PR khác không merge, ghi lý do | A nhận lý do và đóng; không đưa contribution vào main, không tự tạo lại PR B |
@@ -225,7 +221,7 @@ Developer clone repo A bằng tài khoản của mình, tạo feature branch và
 
 Comment **Conversation** đi hai chiều; review/inline findings chỉ B → A, native approval vẫn ở B. Developer A trả lời findings bằng Conversation. Không đồng bộ deletion/reaction. PR tạo trực tiếp tại B không tạo PR A, nhưng khi merge thì main A vẫn cập nhật.
 
-Kiểm tra cả **notifier và controller**, không chỉ CI code hoặc HTTP dispatch. Thử quyền bị từ chối: developer không cập nhật A/main, App B không cập nhật/merge B/main. Nghiệm thu manual bằng Run workflow notifier A; nghiệm thu B review/merge bằng event thật. Schedule/dispatch controller không có submission phải giữ nguyên incoming SHA tại B.
+Kiểm tra cả **notifier và controller**, không chỉ CI code hoặc HTTP dispatch. Thử quyền bị từ chối: developer không cập nhật A/main, App B không cập nhật/merge B/main. Nghiệm thu trigger bằng sự kiện thật, không dùng Run workflow để chứng minh tự động.
 
 Sau khi bot sync, developer chạy:
 

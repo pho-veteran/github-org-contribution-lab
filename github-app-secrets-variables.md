@@ -100,4 +100,6 @@ App Sync tạo tại TechX phải cho phép **Any account** để owner XBrainVN
 
 GitHub không cho đọc lại giá trị secret sau khi lưu. Nếu nhập nhầm, cập nhật lại bằng PEM đúng. Không cần tự tạo hoặc lưu installation token dài hạn; workflow tự tạo token bằng Client ID + PEM và thu hồi khi kết thúc.
 
+[Tiếp theo: setup CI dispatch tại A và reconcile khi B/main thay đổi](github-app-workflows-ab.md).
+
 [Cấu hình và nghiệm thu đầy đủ](github-app-setup.md) · [Source controller đã điền mapping XBrainVN → TechX](https://github.com/pho-veteran/xora-contribution-controller).

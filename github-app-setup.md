@@ -162,6 +162,8 @@ Job `plan` phải tạo đủ các job `Reconcile <id>`, mỗi cặp thành côn
 
 ### 4.3. Cài notifier tại B, đồng bộ về A
 
+Với **XBrainVN → TechX**, xem [doc riêng: chỉ chạy CI dispatch tại A, giữ pipeline B và thêm reconcile khi B/main thay đổi](github-app-workflows-ab.md).
+
 Đặt dispatch secret/variable ở **cả A và B** theo mục 2. Từ thư mục cha chứa `bridge-docs`, dùng thư mục làm việc riêng cho từng cặp:
 
 ```powershell

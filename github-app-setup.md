@@ -316,4 +316,6 @@ Bàn giao thư mục [templates](templates) cùng tài liệu này, ghi lại co
 | Key lộ | Thu hồi ngay key/installation bị ảnh hưởng, dừng job liên quan và kiểm tra log/audit |
 | Main diverge | Tạm dừng, xác định commit ngoài luồng và để maintainer xử lý; không tự reset/force-push |
 
+Nếu A/main đã bị ghi trực tiếp trước khi bật branch protection, maintainer có thể phục hồi một lần theo B/main: lưu SHA hiện tại của A/main vào branch recovery, lấy B/main thực tế, rồi cập nhật riêng A/main với `--force-with-lease` ràng buộc SHA cũ đã kiểm tra. Không xóa branch đóng góp. Sau đó viết comment trên PR A để notifier gọi lại controller và kiểm tra cả hai main. Đây là thao tác phục hồi có chủ đích của maintainer; controller thường ngày vẫn chỉ fast-forward và dừng khi lịch sử lệch. Bật protection tại A/main để chỉ App đồng bộ được cập nhật nhánh.
+
 Theo dõi Actions minutes, notifier bị fail/skip và thời gian đồng bộ. PR/review/comment chạy theo sự kiện, không chờ polling. Lịch chỉ là dự phòng; nghiệm thu trigger bằng run notifier và controller có nguồn tương ứng, không dùng lượt chạy tay để chứng minh tự động.

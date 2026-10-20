@@ -247,9 +247,34 @@ A nhận cả nội dung yêu cầu, tên file, dòng, SHA đã review và diff 
 
 **Đóng PR không merge:** maintainer đóng [B #21](https://github.com/TF4-Phase3-TechX/bot-bridge-lab/pull/21) lúc 04:45:45 UTC; [A #9](https://github.com/Vihnnnn/bot-bridge-lab/pull/9) tự đóng lúc 04:46:11 UTC. Cả hai có `merged=false`. Không có thao tác dispatch tay; khoảng thời gian quan sát là 26 giây, không phải cam kết độ trễ.
 
-**Guard khi A/main bị ghi trực tiếp:** trong lúc test A #10 / B #23, A/main nhận commit `0ec5302` chưa qua B. [Notifier A 39371847911](https://github.com/Vihnnnn/bot-bridge-lab/actions/runs/39371847911) vẫn tự kích hoạt [controller 39371857516](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39371857516); controller dừng với `A/main contains history not accepted by B`. Đây là lỗi baseline, không phải notifier chưa chạy. Lượt test mới chưa hoàn tất approve/merge sau commit sửa; không dùng evidence lịch sử bên dưới để tuyên bố bước này đã pass trên cặp A #10 / B #23.
+**Guard khi A/main bị ghi trực tiếp:** trong lúc test A #10 / B #23, A/main nhận commit `0ec5302` chưa qua B. [Notifier A 39371847911](https://github.com/Vihnnnn/bot-bridge-lab/actions/runs/39371847911) vẫn tự kích hoạt [controller 39371857516](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39371857516); controller dừng với `A/main contains history not accepted by B`. Đây là lỗi baseline, không phải notifier chưa chạy.
 
 ![Controller đã được sự kiện A kích hoạt, dừng vì A/main có lịch sử chưa được B chấp nhận](proposal-images/event-03-main-guard.png)
+
+**Phục hồi baseline:** theo quyết định B là source of truth, maintainer lưu commit lệch ở branch `recovery/a-main-before-b-sync-0ec53025dce5`, rồi đưa riêng A/main về B/main `1985f3a` bằng force-with-lease, kiểm tra SHA cũ trước khi ghi. Thao tác phục hồi một lần hoàn tất lúc **11:58:16 ngày 20/10/2026 (UTC+7)**. Controller không được đổi sang tự force-push. [Comment tại A #10](https://github.com/Vihnnnn/bot-bridge-lab/pull/10#issuecomment-6283740451) kích hoạt lại luồng sự kiện; protection A/main cần ngăn developer ghi/merge trực tiếp trong môi trường vận hành.
+
+**Tiếp tục cùng cặp A #10 / B #23 sau phục hồi:**
+
+| Bước | Kết quả đã kiểm tra |
+|---|---|
+| Comment A gọi lại controller | [Run 39372387829 Success](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39372387829) chuyển commit sửa `177394a` và comment addressed sang B #23 |
+| B approve revision mới | [Approval của pho-veteran](https://github.com/TF4-Phase3-TechX/bot-bridge-lab/pull/23#pullrequestreview-5580932872), sau khi CI của revision mới pass |
+| Đồng bộ trao đổi hai chiều | [Approval tại A](https://github.com/Vihnnnn/bot-bridge-lab/pull/10#issuecomment-6283762111), [comment B → A](https://github.com/Vihnnnn/bot-bridge-lab/pull/10#issuecomment-6283762641), [comment A → B](https://github.com/TF4-Phase3-TechX/bot-bridge-lab/pull/23#issuecomment-6283762422); đã kiểm tra đủ trước khi merge |
+| Maintainer B merge | B #23 merged bởi `pho-veteran`, merge commit `7f0d494f0ed32b5a36ad8b7c5b93916fc166ded7` |
+| Bot đồng bộ A | [Controller 39372486310 Success](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39372486310): A/main fast-forward từ `1985f3a` tới `7f0d494`; A #10 / B #23 là `accepted` |
+| A hoàn tất và developer pull | A #10 có `merged=true`, hoàn tất lúc **12:01:09 (UTC+7)**. Local chạy `git switch main` rồi `git pull --ff-only origin main` từ A; SHA local = A/main = B/main = `7f0d494` |
+
+![B approve revision mới sau khi nhận commit sửa và comment addressed](proposal-images/event-04-b-approved.png)
+
+![A nhận bản sao approval và phản hồi của B; ảnh chụp sau khi merge hoàn tất](proposal-images/event-05-a-approval-copy.png)
+
+Merge B tạo [notifier push 39372614624](https://github.com/TF4-Phase3-TechX/bot-bridge-lab/actions/runs/39372614624) và [notifier PR closed 39372614679](https://github.com/TF4-Phase3-TechX/bot-bridge-lab/actions/runs/39372614679), đều Success. Trong lượt này, controller từ comment B đang chạy đã đọc thấy B/main mới và đồng bộ A trước. Run dispatch do push `39372626920` bị thay thế khi còn chờ bởi [run từ PR closed 39372632079 — Success](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39372632079); không dùng run bị cancelled làm bằng chứng reconcile thành công. Toàn bộ bước sau phục hồi được kích hoạt bằng sự kiện, không bấm Run workflow.
+
+![Controller đọc B/main thực tế, fast-forward A/main và ghi nhận cặp PR accepted](proposal-images/event-06-controller-accepted.png)
+
+![PR A hoàn tất sau khi bot đồng bộ đúng lịch sử B đã chấp nhận](proposal-images/event-07-a-merged.png)
+
+Hai commit `36a4538` và `177394a` vẫn nằm nguyên SHA trong lịch sử main. Không merge PR tại A, không tạo merge commit độc lập ở A. Branch recovery giữ commit ngoài luồng; commit đó không được tự nhập vào B/main.
 
 GitHub hiển thị controller là `workflow_dispatch` vì App gọi API này; kiểm tra actor App dispatch và phần **trigger** trong summary để truy về notifier nguồn. Một đợt sự kiện gần nhau có thể thay thế run đang chờ theo concurrency; lượt controller tiếp theo đọc lại toàn bộ trạng thái hiện tại. Không coi một run bị cancelled là evidence thành công.
 

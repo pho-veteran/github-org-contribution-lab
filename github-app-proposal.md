@@ -551,7 +551,7 @@ Các thay đổi còn lại được kiểm tra bằng test: ghép cặp theo bo
 
 ### Nhiều repo dùng chung ba App — 20/10/2026
 
-Controller [`5d874fa`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/commit/5d874faaa43ed1e262abcbbc59db15f3321e04bd) chuyển cấu hình repo ra registry. Một bộ script và một workflow xử lý các cặp được khai báo; không nhân bản controller theo số repo. [Setup cho 7 cặp](github-app-setup.md#dùng-chung-cho-7-cặp-repo) và [registry mẫu](templates/controller/bridge.config.json) dùng tên trung lập.
+Controller [`5d874fa`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/commit/5d874faaa43ed1e262abcbbc59db15f3321e04bd) chuyển cấu hình repo ra registry. Một bộ script và một workflow xử lý các cặp được khai báo; không nhân bản controller theo số repo. [Setup cho nhiều cặp repo](github-app-setup.md) và [registry mẫu](templates/controller/bridge.config.json) dùng tên trung lập.
 
 Lab có hai cặp private, đều không phải fork:
 

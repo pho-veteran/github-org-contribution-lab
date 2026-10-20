@@ -162,6 +162,36 @@ App A đã được cài riêng. Đề xuất ruleset `Restrict updates` cho mai
 
 Sau khi bật policy trên gói hỗ trợ, cần test thực tế: App B mở PR được nhưng không push/merge/force-push/xóa main; member A không push/merge main; maintainer B vẫn merge được và App A đồng bộ được. Test thêm stale approval, conflict, main lệch, token bị thu hồi và retry. **Các kiểm tra từ chối do branch protection này chưa chạy trong lab Free.**
 
+### 2.5. Kích hoạt reconcile thủ công
+
+**Hiện tại — maintainer B kích hoạt**
+
+Maintainer B vào **bot-bridge-controller → Actions → Isolated bridge - B decides → Run workflow → main**, hoặc chạy CLI bằng tài khoản có quyền tại controller:
+
+```powershell
+gh workflow run controller.yml --repo TF4-Phase3-TechX/bot-bridge-controller --ref main
+```
+
+Member A chưa tự chạy được lệnh này: họ không có quyền vào repo controller. GitHub yêu cầu quyền write để người dùng chạy workflow thủ công. `git pull` của developer chỉ tải A/main về local, không kích hoạt bot cập nhật A/main từ B. [Chạy workflow thủ công](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow).
+
+**Đề xuất — developer yêu cầu từ PR A**
+
+```text
+Developer comment /bridge sync trên PR A
+→ Webhook của App A gửi sự kiện đến endpoint do B quản lý
+→ Endpoint xác minh sự kiện và quyền người yêu cầu
+→ Credential riêng của endpoint dispatch controller.yml trên main
+→ Controller đối chiếu trạng thái thật tại B, đồng bộ theo guard hiện có
+→ App A cập nhật kết quả vào PR A
+→ Developer pull origin main
+```
+
+Endpoint chỉ chấp nhận đúng lệnh, repo/installation đã cấu hình và người được phép yêu cầu sync. Xác minh chữ ký `X-Hub-Signature-256`, kiểm tra lại comment/người gửi qua API, chống xử lý trùng delivery và giới hạn tần suất. Repo controller, tên workflow và ref `main` được cố định phía server; comment không được chọn repo, ref hoặc lệnh thực thi. [Xác minh webhook](https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries).
+
+Dùng credential riêng chỉ cài tại controller với Actions write để dispatch; giữ credential ở endpoint do B quản lý, không đặt ở A và không mở rộng quyền App B vận chuyển code. Actions write là quyền cấp repo, không tự giới hạn vào một workflow; endpoint phải cưỡng chế danh sách thao tác được phép. Developer chỉ có quyền yêu cầu chạy lại, không có quyền merge, force-sync hay bỏ qua trạng thái review. [API workflow dispatch](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event).
+
+Đây là phần mở rộng **chưa triển khai**: cần endpoint chạy được từ Internet, cấu hình webhook App A và credential dispatch. Lệnh `/bridge sync` hiện chưa có tác dụng trong lab. Nếu chỉ bổ sung đọc lệnh qua lịch polling thì không cần endpoint, nhưng vẫn phải đợi lịch; đó không phải kích hoạt ngay. Thời gian chạy sau dispatch cũng phụ thuộc hàng đợi GitHub Actions.
+
 ## 3. Triển khai — Ba use case chính
 
 Các use case dùng chung cấu hình ở mục 2. Developer chỉ làm việc tại A; maintainer B quyết định code được nhận vào main. Mỗi feature dùng branch riêng. Controller polling khoảng 15 phút hoặc maintainer B dispatch thủ công.
@@ -287,17 +317,37 @@ Maintainer B mở PR B, kiểm tra diff và gửi review **Request changes** n�
 
 Controller hiện chỉ chuyển trạng thái và người review, không sao chép nội dung review hoặc comment theo dòng. Vì member A không đọc được private repo B, maintainer cần chuyển hướng dẫn sửa cụ thể qua kênh trao đổi mà hai bên cùng truy cập. Việc trao đổi này nằm ngoài phần tự động của lab.
 
+**Lượt test Request changes ngày 20/10/2026**
+
+[PR A #3](https://github.com/Vihnnnn/bot-bridge-lab/pull/3) chứa file `case1-request-changes-20261020.txt`, commit `f91f99b4a77ad95915e99bd1dfe38c0d64adadfc` của `vinh-xbrainn`. [Run 39360920642](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39360920642) chuyển commit và mở [PR B #14](https://github.com/TF4-Phase3-TechX/bot-bridge-lab/pull/14).
+
+Maintainer `pho-veteran` gửi review **Request changes** cho đúng head, yêu cầu thay dòng `Sync behavior: TODO.` bằng mô tả B quyết định merge, bot đồng bộ A/main từ B/main và developer chỉ pull repo A. Review có cả nội dung tổng thể và comment tại dòng 2.
+
+![Maintainer B gửi Request changes trên PR số 14](proposal-images/case1-b-request-changes.png)
+
+Sau [run 39361034447](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39361034447) thành công, App A cập nhật comment tại PR #3:
+
+```text
+Reviews: pho-veteran: CHANGES_REQUESTED.
+```
+
+![App A cập nhật CHANGES_REQUESTED tại PR A số 3](proposal-images/case1-a-request-changes.png)
+
+API xác nhận cả hai PR vẫn mở, chưa merge; A/main và B/main vẫn cùng `7d2050b7ee5cba79c118ed0acbb1461300012490`. Contribution chưa vào main. Trạng thái ở A là **comment của bot**, không phải một GitHub review do maintainer B trực tiếp gửi tại A.
+
+`B mergeability: clean` trong comment chỉ phản ánh khả năng merge không conflict, không có nghĩa B đã approve. UI B vẫn cho phép merge trong lab Free vì chưa có branch protection bắt buộc approval; Request changes tự nó chưa cưỡng chế việc chặn merge ở đây.
+
 **Bước 2 — A sửa trên cùng branch**
 
-Ví dụ tiếp tục branch/file ở use case 1, trước khi B merge:
+Để tiếp tục chính PR A #3 đang chờ sửa, dùng branch/file của lượt Request changes:
 
 ```powershell
-git switch feature/isolated-controller-20261020
+git switch feature/request-changes-20261020
 # Sửa file theo nội dung review rồi kiểm tra diff.
 git diff
-git add case1-isolated-controller-20261020.txt
+git add case1-request-changes-20261020.txt
 git commit -m 'Address B review feedback'
-git push origin feature/isolated-controller-20261020
+git push origin feature/request-changes-20261020
 ```
 
 Không tạo PR A mới cho mỗi lần sửa. Không rebase/force-push branch đã được bot chuyển; thêm commit mới để bot có thể push tiếp theo lịch sử hiện có.
@@ -319,7 +369,7 @@ Nếu B từ chối, maintainer chọn **Close pull request** tại B, không me
 | B merge bản sửa | Bot đồng bộ cùng merge SHA về A; giữ các commit gốc |
 | B đóng PR không merge | PR A đóng với trạng thái rejected; bot không tự mở lại cặp PR |
 
-**Phạm vi evidence:** controller có xử lý cập nhật PR và policy test cho `pending`/`rejected`. Lượt test controller riêng ngày 20/10/2026 chưa chạy đầy đủ vòng request changes → sửa → review lại hoặc từ chối. Không dùng ảnh use case 1 để chứng minh những nhánh này.
+**Phạm vi evidence:** đã chạy thật A mở PR → bot mở PR B → B Request changes kèm comment theo dòng → bot chuyển trạng thái về A, giữ hai main không đổi. Hai PR được giữ mở ở trạng thái chờ sửa. Bước sửa → review lại hoặc từ chối vẫn là hướng dẫn, chưa được thực hiện trong lượt test này; policy test có kiểm tra `pending`/`rejected`.
 
 ### 3.3. Use case 3 — B/main có thay đổi mới, A cập nhật và reconcile branch đang làm
 

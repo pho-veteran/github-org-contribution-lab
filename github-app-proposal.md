@@ -45,6 +45,30 @@ Một cặp PR được giữ xuyên suốt các lần sửa. Code đi A → B; 
 
 ## 2. Setup lab GitHub App
 
+### 2.0. Cơ chế thực thi và phạm vi bàn giao
+
+GitHub App cung cấp **danh tính và quyền**, script quy định **hành vi**, còn GitHub Actions **chạy script** trên runner. Cài App vào repo chưa tạo ra chức năng bridge; phải triển khai cả code controller và các workflow.
+
+| Thành phần | Trách nhiệm |
+|---|---|
+| App B | Cấp token để script đọc B, đẩy branch contribution và thao tác PR B |
+| App A | Cấp token để script đọc PR A, đồng bộ A/main và cập nhật PR/comment A |
+| App dispatch | Cấp token chỉ có Actions write tại controller để notifier B gọi workflow |
+| Script trong controller | Ghép cặp PR; chuyển commit; sao chép review/comment; xử lý accepted/rejected; kiểm tra và fast-forward A/main |
+| GitHub Actions | Khởi chạy script, cấp token trong job và ghi kết quả/log |
+
+Mỗi lượt chạy, Actions dùng private key trong secrets để tạo installation token giới hạn repo và quyền. Script nhận token qua biến môi trường để gọi GitHub API và Git; action tạo token thu hồi token ở bước kết thúc job. Không cấp token hoặc private key này cho developer A. Không cần máy chủ bot chạy liên tục. [Cách dùng GitHub App trong Actions](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/making-authenticated-api-requests-with-a-github-app-in-a-github-actions-workflow).
+
+| Sự kiện | Cơ chế hiện tại |
+|---|---|
+| B/main có commit mới, gồm merge PR | Notifier tại B tự dispatch controller; thời gian thực thi phụ thuộc hàng đợi Actions |
+| A mở PR, thêm commit hoặc comment; B review/comment/đóng PR không merge | Controller đọc tại lượt polling tiếp theo hoặc khi maintainer B dispatch |
+| Developer A chạy `git pull` | Chỉ tải trạng thái đã đồng bộ tại A; không kích hoạt controller |
+
+Hướng dẫn triển khai trung lập nằm trong [Setup GitHub App cho A và B](github-app-setup.md). A và B là hai repo code; **controller là repo private thứ ba**, do B quản lý. Không chuyển key vận chuyển code vào A hoặc job chạy contribution để giảm số repo.
+
+Bộ mã cần bàn giao là workflow controller, bốn module `pr-bridge*.mjs` và thư mục tests được liệt kê ở mục 2.3; notifier nằm tại B. Bản controller dùng cho evidence hiện tại là commit `4f4127610c0b6049d2284e5705e5e8a95fc76aaf`. Các liên kết source ở mục 2.3 là private: người tiếp nhận cần được B cấp quyền vào controller hoặc nhận bản source đã kiểm tra qua kênh bàn giao. File setup là hướng dẫn cấu hình, không thay thế bộ mã này. Không bàn giao private key qua repo docs public.
+
 ### 2.1. Tạo hai App vận chuyển code và giới hạn quyền
 
 Trong session `pho-veteran`, mở **TF4-Phase3-TechX → Settings → Developer settings → GitHub Apps → New GitHub App**. Tạo hai App do B quản lý:
@@ -426,3 +450,27 @@ dd4552b | vinh-xbrainn | Propose review workflow responsibilities
 ![File trên A/main chứa nội dung cuối đã được B chấp nhận](proposal-images/flow-15-a-main.png)
 
 Các commit đóng góp gốc giữ nguyên SHA và author `vinh-xbrainn`; commit merge thuộc maintainer B. Bản clone chỉ có origin A. Lịch sử review và comment vẫn còn ở hai PR để tra cứu sau khi đóng.
+
+### Edge case — B đóng PR mà không merge
+
+Lượt test ngày 20/10/2026 dùng cặp [A #7](https://github.com/Vihnnnn/bot-bridge-lab/pull/7) / [B #19](https://github.com/TF4-Phase3-TechX/bot-bridge-lab/pull/19). Commit `fc2e1e5` thêm một đề xuất bỏ bước chấp thuận của maintainer B, để kiểm tra B từ chối contribution.
+
+**1. A mở PR; controller tạo PR tương ứng tại B.** A vẫn ở trạng thái chờ quyết định của B, chưa cập nhật main.
+
+![PR A số 7 đang mở và được ghép với PR B số 19](proposal-images/reject-01-a-open.png)
+
+**2. Maintainer B ghi lý do rồi đóng PR không merge.** [Comment của B](https://github.com/TF4-Phase3-TechX/bot-bridge-lab/pull/19#issuecomment-6283311161) giải thích đề xuất vi phạm yêu cầu B giữ quyền quyết định, yêu cầu A không merge và dùng PR mới nếu có phương án khác. GitHub hiển thị **Closed with unmerged commits**.
+
+![B đóng PR số 19, giữ nguyên commit chưa merge và nêu lý do từ chối](proposal-images/reject-02-b-closed.png)
+
+**3. Controller đưa lý do về A và đóng PR A.** [Bản sao comment tại A](https://github.com/Vihnnnn/bot-bridge-lab/pull/7#issuecomment-6283316652) chứa đầy đủ nội dung, tác giả và link nguồn. Bot cập nhật trạng thái `rejected`, rồi đóng PR A; cả hai PR có `state: closed`, `merged: false`. Close không tự sinh lời giải thích, nên maintainer cần viết comment lý do.
+
+![A nhận đầy đủ lý do từ B, trạng thái rejected và sự kiện bot đóng PR](proposal-images/reject-03-a-closed.png)
+
+**4. Kiểm tra main và chạy lại controller.** [Run xử lý 39369155193](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39369155193) Success, summary ghi A #7 / B #19 là `rejected`. A/main và B/main trước/sau đều là `40d3fb87978565ff8f9a2fd563887e7d8bdfcf3e`.
+
+![Controller xử lý rejected thành công, A/main và B/main không đổi](proposal-images/reject-04-controller.png)
+
+[Run tiếp theo 39369234420](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39369234420) cũng Success. API xác nhận chỉ có một PR B ghép với A #7, vẫn đóng; chỉ có một bản sao comment lý do. Commit bị từ chối không nằm trong lịch sử hai main; file `rejected-contribution.txt` không tồn tại trên main ở cả hai repo. Developer đã pull A/main, local vẫn cùng SHA và không có file này.
+
+Trong lượt test này, maintainer B dispatch controller để kiểm tra close và chạy lại. **Đóng PR không merge không tạo push B/main**, nên không gọi notifier của bước 9. Cơ chế hiện tại xử lý close qua polling hoặc maintainer dispatch; không phải trigger tự động ngay tại thời điểm close. Request changes giữ PR mở để sửa tiếp; rejected kết thúc cặp PR và không tự tạo lại. Muốn gửi đề xuất khác, A tạo branch và PR mới từ A/main đã cập nhật.

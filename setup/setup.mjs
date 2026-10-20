@@ -23,6 +23,16 @@ const ensure = (condition, message) => { if (!condition) throw new Error(message
 const json = value => JSON.stringify(value, null, 2) + '\n';
 const normalize = value => value.replace(/\r\n/g, '\n');
 
+export const DEFAULT_B_REPOS = Object.freeze([
+  'https://github.com/TechX-Corp/xora-evaluation-framework',
+  'https://github.com/TechX-Corp/xora-eval-framework-fe',
+  'https://github.com/TechX-Corp/xora-learning-loop',
+  'https://github.com/TechX-Corp/xora-platform',
+  'https://github.com/TechX-Corp/xora-platform-fe',
+  'https://github.com/TechX-Corp/xora-resolve-be',
+  'https://github.com/TechX-Corp/xora-resolve-agent',
+]);
+
 export function parseRepos(text) {
   const repos = text.split(/\r?\n/).map(s => s.trim()).filter(s => s && !s.startsWith('#')).map(s => {
     const match = /^https:\/\/github\.com\/([A-Za-z0-9][A-Za-z0-9-]*)\/([A-Za-z0-9_.-]+)\/?$/.exec(s);
@@ -529,9 +539,10 @@ function argsOf(argv) {
 export async function main(argv = process.argv.slice(2)) {
   if (!argv.length || argv[0] === '--help') {
     console.log(`Usage:
-  node setup/setup.mjs init --repos repos-b.txt --org-a ORG_A --account-a ADMIN_A --account-b ADMIN_B --ssh-a SSH_HOST_A --ssh-b SSH_HOST_B --dir .bridge-setup [--controller contribution-controller]
+  node setup/setup.mjs init --org-a ORG_A --account-a ADMIN_A --account-b ADMIN_B --ssh-a SSH_HOST_A --ssh-b SSH_HOST_B --dir .bridge-setup [--repos repos-b.txt] [--controller contribution-controller]
   node setup/setup.mjs prepare|apply|activate|verify --dir .bridge-setup
 Edit .bridge-setup/setup.json after prepare: App Client IDs, PEM paths and manual review flags.
+init defaults to the seven TechX-Corp repositories in DEFAULT_B_REPOS; --repos overrides the entire list.
 Existing private A repositories must have the same names as B. Git uses your SSH Host aliases; gh accounts authenticate API/secret operations.
 init is local only; prepare validates A/B and creates only the controller if missing; apply bootstraps/configures and opens setup PRs; activate dispatches; verify is read-only.`);
     return;
@@ -541,10 +552,11 @@ init is local only; prepare validates A/B and creates only the controller if mis
   ensure(opts['--dir'], '--dir is required');
   const dir = resolve(opts['--dir']), configPath = join(dir, 'setup.json');
   if (mode === 'init') {
-    for (const key of ['--repos', '--org-a', '--account-a', '--account-b', '--ssh-a', '--ssh-b']) ensure(opts[key], `${key} is required`);
+    for (const key of ['--org-a', '--account-a', '--account-b', '--ssh-a', '--ssh-b']) ensure(opts[key], `${key} is required`);
     ensure(!existsSync(configPath), 'setup.json already exists; edit it or choose a new directory');
     ensure(!existsSync(dir) || readdirSync(dir).length === 0, '--dir must be a new or empty directory');
-    const c = makeConfig(parseRepos(readFileSync(resolve(opts['--repos']), 'utf8')), opts['--org-a'], opts['--account-a'], opts['--account-b'], opts['--controller'], opts['--ssh-a'], opts['--ssh-b']);
+    const repoText = opts['--repos'] ? readFileSync(resolve(opts['--repos']), 'utf8') : DEFAULT_B_REPOS.join('\n');
+    const c = makeConfig(parseRepos(repoText), opts['--org-a'], opts['--account-a'], opts['--account-b'], opts['--controller'], opts['--ssh-a'], opts['--ssh-b']);
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, '.gitignore'), '*\n');
     writeFileSync(configPath, json(c), { flag: 'wx', mode: 0o600 });

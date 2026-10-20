@@ -17,6 +17,16 @@ Script **không tạo repo A**, không tự merge PR B, không ghi đè A/main �
 
 [Script](setup/setup.mjs) nằm trong thư mục `setup/` ở root repo, dùng Node.js built-ins, không cần `npm install`. Giữ cả `setup/` và `templates/` khi tải source; script đọc bộ mẫu controller/notifier từ `templates/`. [Thiết kế và quyền chi tiết](github-app-setup.md).
 
+**Lấy script về máy trước:**
+
+```powershell
+git clone https://github.com/pho-veteran/github-org-contribution-lab.git
+cd github-org-contribution-lab
+node setup/setup.mjs --help
+```
+
+`.mjs` là JavaScript module chạy bằng Node.js. Các lệnh dưới đây chạy từ thư mục vừa clone.
+
 ## 2. Chuẩn bị một lần
 
 Máy setup cần **Node.js 24, Git, OpenSSH và GitHub CLI**. Hai tài khoản `gh` cần quyền admin trên các repo tương ứng; tài khoản B cần quyền tạo repo controller. Với OAuth token của `gh`, cấp scope `repo`, `read:org`, `workflow`; hoàn tất SSO theo chính sách org.
@@ -45,28 +55,30 @@ Host github-b
 
 Dùng alias thực tế của máy, không cần tạo lại key. Nếu cùng một SSH identity truy cập cả hai org, có thể dùng `github.com` cho cả hai. Key có passphrase phải được nạp vào SSH agent. Kiểm tra kết nối và xác nhận host GitHub từ trước; script dùng `BatchMode=yes`, `StrictHostKeyChecking=yes`, không tự chấp nhận host mới.
 
-## 3. Nhập link B và kiểm tra repo
+## 3. Khởi tạo cấu hình và kiểm tra repo
 
-Trong thư mục repo docs, tạo `repos-b.txt`, mỗi dòng một URL:
+Script đã có sẵn 7 repo B trong `DEFAULT_B_REPOS`, không cần tạo file input:
 
 ```text
-https://github.com/B_OWNER/project-1
-https://github.com/B_OWNER/project-2
-https://github.com/B_OWNER/project-3
-https://github.com/B_OWNER/project-4
-https://github.com/B_OWNER/project-5
-https://github.com/B_OWNER/project-6
-https://github.com/B_OWNER/project-7
+https://github.com/TechX-Corp/xora-evaluation-framework
+https://github.com/TechX-Corp/xora-eval-framework-fe
+https://github.com/TechX-Corp/xora-learning-loop
+https://github.com/TechX-Corp/xora-platform
+https://github.com/TechX-Corp/xora-platform-fe
+https://github.com/TechX-Corp/xora-resolve-be
+https://github.com/TechX-Corp/xora-resolve-agent
 ```
 
-Thay tên thật, đúng chữ hoa/thường GitHub trả về. Các repo B phải private, không phải fork, cùng org và có default branch `main`. A tương ứng phải private, độc lập và rỗng. Khi chạy lại, A có main cùng lịch sử/đi sau B vẫn được chấp nhận.
+Thay `A_OWNER`, `ADMIN_A`, `ADMIN_B` và hai SSH aliases dưới đây bằng giá trị thật. Các repo B phải private, không phải fork và có default branch `main`; script kiểm tra ở bước prepare. A tương ứng phải private, độc lập và rỗng. Khi chạy lại, A có main cùng lịch sử/đi sau B vẫn được chấp nhận.
 
 ```powershell
-node setup/setup.mjs init --repos repos-b.txt --org-a A_OWNER --account-a ADMIN_A --account-b ADMIN_B --ssh-a github-a --ssh-b github-b --dir .bridge-setup
+node setup/setup.mjs init --org-a A_OWNER --account-a ADMIN_A --account-b ADMIN_B --ssh-a github-a --ssh-b github-b --dir .bridge-setup
 node setup/setup.mjs prepare --dir .bridge-setup
 ```
 
-`init` chỉ ghi local; mặc định controller là `B_OWNER/contribution-controller`, đổi bằng `--controller TEN_REPO` khi init. Thư mục `--dir` phải mới hoặc rỗng. Script sinh `setup.json` gồm mapping và SSH aliases; `.gitignore` tại đó chặn commit dữ liệu setup.
+`init` chỉ ghi local; với danh sách mặc định, controller là `TechX-Corp/contribution-controller`, đổi tên repo bằng `--controller TEN_REPO`. Thư mục `--dir` phải mới hoặc rỗng. Script sinh `setup.json` gồm mapping và SSH aliases; `.gitignore` tại đó chặn commit dữ liệu setup. Cấu hình đã sinh trước đó không tự đổi theo danh sách mới.
+
+Nếu cần danh sách khác, truyền `--repos repos-b.txt` cho init; file có một URL mỗi dòng và thay thế toàn bộ danh sách mặc định.
 
 `prepare` kiểm tra toàn bộ A/B trước khi tạo controller. Repo A thiếu sẽ báo lỗi, không tự tạo. Script không mở quyền Actions nếu org đang chặn; admin phải bật theo chính sách hiện có.
 
@@ -114,6 +126,8 @@ Script lần lượt:
 Kết quả và link PR nằm trong `.bridge-setup/apply-report.json`. Nếu lỗi giữa chừng, sửa nguyên nhân rồi chạy lại cùng lệnh: repo/ref đã có được đối chiếu, PR mở được tái sử dụng. Không có rollback tự động cho các bước đã hoàn tất.
 
 **Phạm vi SSH này chỉ là setup trên máy admin.** Controller Actions vẫn dùng installation token của App; không đưa SSH private key của admin lên GitHub.
+
+**Code B được lấy ở đâu?** Bước `apply` gọi `Transport.bootstrap()` trong script: `git init --bare` → fetch toàn bộ lịch sử B/main qua SSH → push thành A/main → kiểm tra SHA. Đây là bước đưa code vào A rỗng; `init` chỉ sinh cấu hình. Không checkout working tree và không chạy code ứng dụng. Sau bootstrap, developer clone repo A bình thường để làm việc.
 
 ## 6. Duyệt và kích hoạt
 

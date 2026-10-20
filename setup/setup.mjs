@@ -5,10 +5,10 @@ import { createHash, createSign, randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, rmSync, unlinkSync } from 'node:fs';
 import { resolve, dirname, basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { validateConfig as validateRegistry } from '../controller/scripts/bridge-config.mjs';
+import { validateConfig as validateRegistry } from '../templates/controller/scripts/bridge-config.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const templates = resolve(here, '..');
+const templates = resolve(here, '..', 'templates');
 const loginPattern = /^[A-Za-z0-9][A-Za-z0-9-]*$/;
 const repoPattern = /^[A-Za-z0-9_.-]+$/;
 const branch = 'setup/contribution-bridge';
@@ -529,8 +529,8 @@ function argsOf(argv) {
 export async function main(argv = process.argv.slice(2)) {
   if (!argv.length || argv[0] === '--help') {
     console.log(`Usage:
-  node templates/setup/setup.mjs init --repos repos-b.txt --org-a ORG_A --account-a ADMIN_A --account-b ADMIN_B --ssh-a SSH_HOST_A --ssh-b SSH_HOST_B --dir .bridge-setup [--controller contribution-controller]
-  node templates/setup/setup.mjs prepare|apply|activate|verify --dir .bridge-setup
+  node setup/setup.mjs init --repos repos-b.txt --org-a ORG_A --account-a ADMIN_A --account-b ADMIN_B --ssh-a SSH_HOST_A --ssh-b SSH_HOST_B --dir .bridge-setup [--controller contribution-controller]
+  node setup/setup.mjs prepare|apply|activate|verify --dir .bridge-setup
 Edit .bridge-setup/setup.json after prepare: App Client IDs, PEM paths and manual review flags.
 Existing private A repositories must have the same names as B. Git uses your SSH Host aliases; gh accounts authenticate API/secret operations.
 init is local only; prepare validates A/B and creates only the controller if missing; apply bootstraps/configures and opens setup PRs; activate dispatches; verify is read-only.`);

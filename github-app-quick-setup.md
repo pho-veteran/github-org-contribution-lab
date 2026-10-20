@@ -15,7 +15,7 @@
 
 Script **không tạo repo A**, không tự merge PR B, không ghi đè A/main đã lệch và không tự thay controller/notifier khác cấu hình mong đợi. SSH dùng cho Git; `gh` dùng cho API, secrets và PR. SSH key không thay thế API credential.
 
-[Script](templates/setup/setup.mjs) dùng Node.js built-ins, không cần `npm install`. Giữ nguyên thư mục `templates` khi tải source; script đọc bộ controller/notifier ở cùng cây thư mục. [Thiết kế và quyền chi tiết](github-app-setup.md).
+[Script](setup/setup.mjs) nằm trong thư mục `setup/` ở root repo, dùng Node.js built-ins, không cần `npm install`. Giữ cả `setup/` và `templates/` khi tải source; script đọc bộ mẫu controller/notifier từ `templates/`. [Thiết kế và quyền chi tiết](github-app-setup.md).
 
 ## 2. Chuẩn bị một lần
 
@@ -62,8 +62,8 @@ https://github.com/B_OWNER/project-7
 Thay tên thật, đúng chữ hoa/thường GitHub trả về. Các repo B phải private, không phải fork, cùng org và có default branch `main`. A tương ứng phải private, độc lập và rỗng. Khi chạy lại, A có main cùng lịch sử/đi sau B vẫn được chấp nhận.
 
 ```powershell
-node templates/setup/setup.mjs init --repos repos-b.txt --org-a A_OWNER --account-a ADMIN_A --account-b ADMIN_B --ssh-a github-a --ssh-b github-b --dir .bridge-setup
-node templates/setup/setup.mjs prepare --dir .bridge-setup
+node setup/setup.mjs init --repos repos-b.txt --org-a A_OWNER --account-a ADMIN_A --account-b ADMIN_B --ssh-a github-a --ssh-b github-b --dir .bridge-setup
+node setup/setup.mjs prepare --dir .bridge-setup
 ```
 
 `init` chỉ ghi local; mặc định controller là `B_OWNER/contribution-controller`, đổi bằng `--controller TEN_REPO` khi init. Thư mục `--dir` phải mới hoặc rỗng. Script sinh `setup.json` gồm mapping và SSH aliases; `.gitignore` tại đó chặn commit dữ liệu setup.
@@ -99,7 +99,7 @@ Review workflow sẵn có tại B: deploy/CD chỉ chạy ở B, build/test cont
 ## 5. Chạy cấu hình tự động
 
 ```powershell
-node templates/setup/setup.mjs apply --dir .bridge-setup
+node setup/setup.mjs apply --dir .bridge-setup
 ```
 
 Script lần lượt:
@@ -130,7 +130,7 @@ Script không tự cấu hình protection vì còn phụ thuộc gói GitHub, te
 Sau khi review xong, đặt `manual.protectionsReviewed` thành `true`, rồi chạy:
 
 ```powershell
-node templates/setup/setup.mjs activate --dir .bridge-setup
+node setup/setup.mjs activate --dir .bridge-setup
 ```
 
 Script kiểm tra notifier đã merge tại tất cả B, credentials, registry và policy controller đã Success, rồi bật `BRIDGE_ENABLED=true` và dispatch một lượt cho tất cả cặp. **`dispatched-not-yet-verified` chưa phải hoàn tất.**
@@ -138,7 +138,7 @@ Script kiểm tra notifier đã merge tại tất cả B, credentials, registry 
 Chờ Actions rồi kiểm tra:
 
 ```powershell
-node templates/setup/setup.mjs verify --dir .bridge-setup
+node setup/setup.mjs verify --dir .bridge-setup
 ```
 
 Chỉ trả `configuration-and-main-sync-verified` khi mọi cặp có A/main = B/main, notifier đúng ở cả hai bên và một lượt reconcile tất cả cặp sau activate đã Success. Exit code `2` nghĩa là chưa sẵn sàng; đọc report, chờ/xử lý lỗi rồi chạy verify lại. Secrets được kiểm tra tên/Client ID và kết quả Actions; GitHub không cho đọc ngược giá trị secret.
@@ -163,7 +163,7 @@ Script hỗ trợ bootstrap Git history trên `main`; Git LFS/submodule cần ch
 Kiểm tra script:
 
 ```powershell
-node --test templates/setup/setup.test.mjs
+node --test setup/setup.test.mjs
 node --test templates/controller/tests/*.test.mjs
 ```
 

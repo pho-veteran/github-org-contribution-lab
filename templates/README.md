@@ -2,7 +2,6 @@
 
 | Thành phần | Cài ở đâu | Nội dung |
 |---|---|---|
-| [setup script](setup/setup.mjs) | Máy admin có SSH và hai tài khoản `gh` | Nhận link B, bootstrap vào A rỗng đã có, cấu hình controller/secrets và mở PR notifier; theo [hướng dẫn script](../github-app-quick-setup.md) |
 | [controller](controller) | Repo controller do B quản lý | Scripts, tests và workflow điều phối |
 | [notifier dùng chung A/B](notifier/.github/workflows/notify-controller.yml) | Cài tại B trước, bot đồng bộ B/main sang A/main | PR/review/Conversation events ở A và B; push main chỉ ở B |
 

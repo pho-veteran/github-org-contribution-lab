@@ -67,7 +67,7 @@ Mỗi lượt chạy, Actions dùng private key trong secrets để tạo instal
 
 Hướng dẫn triển khai trung lập nằm trong [Setup GitHub App cho A và B](github-app-setup.md). A và B là hai repo code; **controller là repo private thứ ba**, do B quản lý. Không chuyển key vận chuyển code vào A hoặc job chạy contribution để giảm số repo.
 
-Bộ mã cần bàn giao là workflow controller, bốn module `pr-bridge*.mjs` và thư mục tests được liệt kê ở mục 2.3; notifier nằm tại B. Bản controller dùng cho evidence hiện tại là commit `4f4127610c0b6049d2284e5705e5e8a95fc76aaf`. Các liên kết source ở mục 2.3 là private: người tiếp nhận cần được B cấp quyền vào controller hoặc nhận bản source đã kiểm tra qua kênh bàn giao. File setup là hướng dẫn cấu hình, không thay thế bộ mã này. Không bàn giao private key qua repo docs public.
+Bộ mã trung lập đã có ngay trong repo docs: [controller, bốn module và tests](templates/controller), cùng [workflow notifier tại B](templates/B/.github/workflows/notify-controller.yml). Người nhận làm theo [file setup](github-app-setup.md) để copy, thay placeholder A/B, tạo App và đặt secrets; không cần truy cập source private của lab. Bản mẫu giữ logic của controller dùng cho evidence tại commit `4f4127610c0b6049d2284e5705e5e8a95fc76aaf`, chỉ thay cấu hình môi trường bằng placeholder. Các liên kết private ở mục 2.3 dùng để đối chiếu deployment lab. Không bàn giao private key qua repo docs public.
 
 ### 2.1. Tạo hai App vận chuyển code và giới hạn quyền
 

@@ -24,6 +24,16 @@ Developer → pull A/main
 
 Ngoài hai repo code A và B, triển khai thêm **một repo controller private do B quản lý**. Repo này giữ code điều phối và key của hai App vận chuyển code. Developer A không cần quyền vào B hoặc controller.
 
+Bộ mã triển khai nằm ngay trong thư mục [templates](templates) của repo tài liệu này:
+
+| Bộ mẫu | Copy tới đâu |
+|---|---|
+| [templates/controller](templates/controller) | Toàn bộ nội dung vào root repo controller, gồm cả `.github` và `.gitignore` |
+| [Workflow notifier của B](templates/B/.github/workflows/notify-controller.yml) | `.github/workflows/notify-controller.yml` tại repo B |
+| Repo A | Không cần copy script hoặc đặt secret bridge; A nhận lịch sử code từ B |
+
+Đây là source và workflow hoàn chỉnh, cần thay placeholder và cấu hình App/secrets trước khi bật. Các workflow được đặt dưới `templates/` nên không tự chạy trong repo tài liệu.
+
 ## 2. Chuẩn bị
 
 Ghi lại các giá trị trước khi cấu hình:
@@ -33,8 +43,8 @@ Ghi lại các giá trị trước khi cấu hình:
 | `A_OWNER/A_REPO` | Organization và tên repo A |
 | `B_OWNER/B_REPO` | Organization và tên repo B |
 | `B_OWNER/CONTROLLER_REPO` | Repo controller do B quản lý |
-| `APP_A_BOT` | Login bot của App A, gồm hậu tố `[bot]` |
-| `APP_B_BOT` | Login bot của App B, gồm hậu tố `[bot]` |
+| `APP_A_SLUG` | Slug trong URL `github.com/apps/<slug>` của App A; giữ hậu tố `[bot]` đã có trong script |
+| `APP_B_SLUG` | Slug trong URL `github.com/apps/<slug>` của App B; giữ hậu tố `[bot]` đã có trong script |
 | Nhánh chính | `main` tại cả ba repo |
 
 Các tên trên là placeholder, cần thay bằng giá trị thật trong cấu hình và code.
@@ -46,7 +56,7 @@ Yêu cầu:
 3. A/main và B/main ban đầu có cùng lịch sử Git, ưu tiên cùng SHA. Khởi tạo A từ lịch sử B bằng tài khoản được phép đọc B và ghi A; không tạo hai initial commit độc lập.
 4. Nếu hai repo đã có lịch sử khác nhau, maintainer xử lý và xác nhận baseline trước khi bật đồng bộ. Controller không tự force-push hoặc giải quyết conflict.
 5. B bật **Create a merge commit**; không dùng squash/rebase merge cho luồng giữ SHA commit gốc.
-6. Nhận bộ mã controller đã được kiểm tra, gồm workflow, các module và tests ở mục 5. Không triển khai chỉ từ tên file hoặc cài App rồi chờ bot hoạt động.
+6. Tải source bằng **Code → Download ZIP** hoặc clone repo tài liệu này. Máy chuẩn bị có Git và Node.js 24; các lệnh copy bên dưới dùng PowerShell. GitHub Actions chạy trên Ubuntu và dùng Node.js có sẵn trên runner.
 
 Author/email trong Git có thể tự khai báo. Giữ metadata không chứng minh danh tính người tạo commit; nếu cần xác thực, yêu cầu ký commit và kiểm tra signer.
 
@@ -96,7 +106,17 @@ Key vận chuyển code chỉ nằm tại controller. Key dispatch tại B chỉ
 
 ## 5. Triển khai controller
 
-Đặt bộ mã bàn giao vào repo controller theo cấu trúc:
+Copy toàn bộ nội dung [templates/controller](templates/controller) vào repo controller mới, private và rỗng. Ví dụ, thay `DOCS_REPO_URL` bằng URL clone repo tài liệu đang đọc, và thay `B_OWNER/CONTROLLER_REPO`:
+
+```powershell
+git clone DOCS_REPO_URL bridge-docs
+git clone https://github.com/B_OWNER/CONTROLLER_REPO.git controller
+Copy-Item -Path .\bridge-docs\templates\controller\* -Destination .\controller -Recurse -Force
+Set-Location .\controller
+git checkout -B main
+```
+
+Sau khi copy, cấu trúc tại root controller là:
 
 ```text
 .github/workflows/controller.yml
@@ -105,29 +125,39 @@ scripts/pr-bridge-policy.mjs
 scripts/pr-bridge-reviews.mjs
 scripts/pr-bridge-comments.mjs
 tests/*.test.mjs
+.gitignore
 ```
 
 | File | Chức năng |
 |---|---|
-| `pr-bridge.mjs` | Đọc trạng thái, chuyển Git objects/refs, gọi API PR/comment và đồng bộ main |
-| `pr-bridge-policy.mjs` | Giới hạn mutation/ref; quyết định pending, accepted, rejected |
-| `pr-bridge-reviews.mjs` | Đưa review đã submit và nội dung findings của B về A |
-| `pr-bridge-comments.mjs` | Sao chép comment hai chiều, ghi nguồn và chống lặp |
-| `controller.yml` | Chạy kiểm tra và cấp token cho job reconcile |
+| [scripts/pr-bridge.mjs](templates/controller/scripts/pr-bridge.mjs) | Đọc trạng thái, chuyển Git objects/refs, gọi API PR/comment và đồng bộ main |
+| [scripts/pr-bridge-policy.mjs](templates/controller/scripts/pr-bridge-policy.mjs) | Giới hạn mutation/ref; quyết định pending, accepted, rejected |
+| [scripts/pr-bridge-reviews.mjs](templates/controller/scripts/pr-bridge-reviews.mjs) | Đưa review đã submit và nội dung findings của B về A |
+| [scripts/pr-bridge-comments.mjs](templates/controller/scripts/pr-bridge-comments.mjs) | Sao chép comment hai chiều, ghi nguồn và chống lặp |
+| [.github/workflows/controller.yml](templates/controller/.github/workflows/controller.yml) | Chạy kiểm tra và cấp token cho job reconcile |
+| [tests](templates/controller/tests) | 16 test policy, boundary, review và comment; không cần token hay gọi GitHub |
 
-Trong bản controller dùng các hằng cấu hình, đặt:
+Trong `scripts/pr-bridge.mjs`, thay các placeholder ở năm hằng đầu file:
 
 ```javascript
 const source = 'A_OWNER/A_REPO';
 const target = 'B_OWNER/B_REPO';
-const bot = 'APP_B_BOT';
-const sourceBot = 'APP_A_BOT';
+const bot = 'APP_B_SLUG[bot]';
+const sourceBot = 'APP_A_SLUG[bot]';
 const controllerRepo = 'B_OWNER/CONTROLLER_REPO';
 ```
 
-Đổi đồng bộ repo allowlist, tên bot, owner/repositories trong workflow và fixture test. Không chỉ sửa các dòng trên nếu các file khác vẫn chứa giá trị của môi trường trước.
+Chỉ ba file dưới đây chứa cấu hình môi trường cần thay. Các module còn lại và fixture tests dùng dữ liệu giả, không cần đổi.
 
-Workflow controller cần:
+| File | Placeholder phải thay ở mọi vị trí trong file |
+|---|---|
+| `scripts/pr-bridge.mjs` | `A_OWNER`, `A_REPO`, `B_OWNER`, `B_REPO`, `CONTROLLER_REPO`, `APP_A_SLUG`, `APP_B_SLUG` |
+| `.github/workflows/controller.yml` | `A_OWNER`, `A_REPO`, `B_OWNER`, `B_REPO`, `CONTROLLER_REPO` |
+| Notifier tại B ở mục 6 | `B_OWNER`, `B_REPO`, `CONTROLLER_REPO` |
+
+Giữ nguyên tên variable/secret và biến môi trường; nhập Client ID/PEM tại Settings theo mục 4, không điền credential vào code. Không thay `SOURCE_TOKEN`, `BRIDGE_APP_TOKEN` hoặc các biểu thức `${{ ... }}` bằng token cụ thể.
+
+Workflow controller mẫu đã cấu hình:
 
 1. Trigger `workflow_dispatch` và `schedule`. Có thể dùng `7,22,37,52 * * * *` để chạy định kỳ; lịch Actions có thể bị trễ.
 2. Inputs tùy chọn `source_repo`, `source_sha`, `source_run_id` để truy vết notifier; không dùng SHA từ input làm nguồn quyết định thay cho B/main thực tế.
@@ -147,54 +177,48 @@ Các guard của script phải còn hoạt động:
 - Không checkout/chạy contribution, Git hooks hoặc dependencies của contribution trong job có key.
 - Sao chép nội dung trao đổi như dữ liệu; giữ nguồn/tác giả, không thực thi comment như lệnh và không sao chép bot qua lại.
 
-Trong clone controller, chạy:
+Trong clone controller đã thay placeholder, kiểm tra không còn placeholder và chạy tests:
 
-```sh
+```powershell
+Select-String -Path .\scripts\pr-bridge.mjs,.\.github\workflows\controller.yml -Pattern 'A_OWNER|A_REPO|B_OWNER|B_REPO|CONTROLLER_REPO|APP_A_SLUG|APP_B_SLUG'
 node --check scripts/pr-bridge.mjs
 node --test tests/*.test.mjs
 ```
 
-Commit code đã cấu hình vào main, kiểm tra job policy thành công rồi bật `BRIDGE_ENABLED=true`. Maintainer B chạy **Actions → workflow controller → Run workflow → main** lần đầu, kiểm tra đúng repo/token scope và SHA hai main.
+`Select-String` phải không trả về dòng nào; tests phải pass 16/16. Script dùng Node.js built-in modules, không có bước `npm install`.
+
+```powershell
+git add .github scripts tests .gitignore
+git commit -m "Configure contribution controller for A and B"
+git push -u origin main
+```
+
+Kiểm tra job policy thành công rồi bật `BRIDGE_ENABLED=true`. Maintainer B chạy **Actions → Isolated bridge - B decides → Run workflow → main** lần đầu, kiểm tra đúng repo/token scope và SHA hai main.
 
 ## 6. Setup workflow tại B và cách dùng A
 
-Tại B, triển khai `.github/workflows/notify-controller.yml` sau khi controller đã nhận được dispatch. Phần trigger và điều kiện job:
+Tại B, copy [workflow notifier hoàn chỉnh](templates/B/.github/workflows/notify-controller.yml) vào `.github/workflows/notify-controller.yml`, sau khi controller đã chạy thành công bằng dispatch. Từ thư mục cha chứa `bridge-docs` và `controller`:
 
-```yaml
-on:
-  push:
-    branches: [main]
-
-permissions: {}
-
-jobs:
-  notify:
-    if: github.repository == 'B_OWNER/B_REPO' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    # Các bước tạo token và dispatch được mô tả bên dưới.
+```powershell
+git clone https://github.com/B_OWNER/B_REPO.git B
+New-Item -ItemType Directory -Force -Path .\B\.github\workflows
+Copy-Item -LiteralPath .\bridge-docs\templates\B\.github\workflows\notify-controller.yml -Destination .\B\.github\workflows\notify-controller.yml
 ```
 
-Đây là phần cấu hình cần áp dụng vào workflow notifier của bộ mã bàn giao, không phải workflow hoàn chỉnh.
+Thay `B_OWNER`, `B_REPO`, `CONTROLLER_REPO` ở **mọi vị trí** trong notifier: job condition, owner/repositories của token, URL API, `source_repo` và summary. Không thay tên secret/variable.
 
-Notifier không checkout code. Các bước còn lại:
-
-1. Tạo token App dispatch từ variable/secret ở B, giới hạn owner `B_OWNER`, repositories `CONTROLLER_REPO`, `permission-actions: write`.
-2. Gọi `POST /repos/B_OWNER/CONTROLLER_REPO/actions/workflows/controller.yml/dispatches` bằng token đó.
-3. Body có dạng sau; thay SHA/run ID bằng dữ liệu event thực tế:
-
-```json
-{
-  "ref": "main",
-  "inputs": {
-    "source_repo": "B_OWNER/B_REPO",
-    "source_sha": "<github.sha>",
-    "source_run_id": "<github.run_id>"
-  }
-}
+```powershell
+Set-Location .\B
+Select-String -Path .\.github\workflows\notify-controller.yml -Pattern 'B_OWNER|B_REPO|CONTROLLER_REPO'
+git switch -c setup/notify-controller
+git add .github/workflows/notify-controller.yml
+git commit -m "Notify controller when B main changes"
+git push -u origin setup/notify-controller
 ```
 
-4. Cố định repo đích, tên workflow và ref trong code; không nhận endpoint từ PR/comment.
-5. Kiểm tra HTTP thành công, ghi source SHA/run vào summary. Dispatch được nhận không đồng nghĩa reconcile đã thành công; kiểm tra run tại controller.
+`Select-String` phải không trả về dòng nào. Maintainer B mở PR từ branch này vào main, review rồi merge theo quy tắc bảo vệ B. Commit merge đầu tiên sẽ chạy notifier nếu App dispatch và secrets đã sẵn sàng.
+
+Notifier mẫu không checkout code. Nó lấy token App dispatch giới hạn repo controller/Actions write, rồi gọi `controller.yml/dispatches` với `ref: main`, gửi `source_repo`, `github.sha` và `github.run_id` để truy vết. Đích và ref cố định trong YAML; HTTP lỗi làm job fail. Dispatch được nhận không đồng nghĩa reconcile đã thành công; kiểm tra cả run tại controller.
 
 Push B/main, gồm merge PR, sẽ kích hoạt chuỗi này mà không phải chờ lịch. Thời gian hoàn tất phụ thuộc hàng đợi Actions. Push do `GITHUB_TOKEN` tạo không kích hoạt các workflow push tiếp theo; automation ghi B/main cần App token phù hợp hoặc gọi dispatch riêng. [Quy tắc trigger workflow](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
 
@@ -268,7 +292,7 @@ Khi nghiệm thu, thực hiện lần lượt mở PR → thêm commit → Reque
 
 ## 9. Vận hành và bàn giao
 
-Bàn giao source controller, notifier, tests, commit/version được triển khai, bảng repo/App/installation, tên secrets và người quản lý từng App. Bàn giao key qua kênh secrets được quản lý; không đưa PEM hoặc token vào tài liệu.
+Bàn giao thư mục [templates](templates) cùng tài liệu này, ghi lại commit/version của repo docs đã dùng, commit triển khai tại controller/B, bảng repo/App/installation, tên secrets và người quản lý từng App. Bàn giao key qua kênh secrets được quản lý; không đưa PEM hoặc token vào tài liệu.
 
 | Tình huống | Thao tác |
 |---|---|

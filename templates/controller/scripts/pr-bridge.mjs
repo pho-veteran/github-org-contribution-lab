@@ -6,6 +6,7 @@ import { mainSyncDecision, mainSyncPush, pairDecision, assertMutation, assertPus
 import { reviewFeedback, reviewSummary } from './pr-bridge-reviews.mjs';
 import { conversationCopies } from './pr-bridge-comments.mjs';
 import { loadConfig, pairConfig } from './bridge-config.mjs';
+import { syncBranches } from './branch-sync.mjs';
 
 export async function runBridge({
   config,
@@ -259,7 +260,11 @@ async function run() {
       catch { /* Preserve the original failure even when posting the diagnostic fails. */ }
     }
   }
+  // Read B heads after PR transport so newly created/advanced incoming branches
+  // are mirrored in this same run. Branch failures never starve contribution.
+  report.branches = await syncBranches({ source, target, sourceToken, targetToken, git, api, list, ancestor });
   if (report.pairs.some(p => p.state === 'error')) throw new Error('Some PR pairs failed; remaining pairs were still processed');
+  if (report.branches.some(b => b.state === 'error')) throw new Error('Some B-to-A branches failed; other branches and PR pairs were still processed');
 }
 try { await run(); report.passed = true; }
 catch (error) { report.passed = false; report.error = error.message; }
@@ -269,6 +274,9 @@ finally {
     `A/main before: \`${report.sourceBefore ?? 'unknown'}\``, `B/main: \`${report.targetMain ?? 'unknown'}\``,
     `A/main after: \`${report.sourceAfter ?? 'unknown'}\``, `Main sync: **${report.mainSync ?? 'not-started'}**`, '',
     report.recoveryRef ? `Previous A/main preserved at \`${report.recoveryRef}\` before replacement.\n` : '',
+    '## B-to-A branches', '',
+    ...((report.branches ?? []).map(b => `- ${encodeURIComponent(b.branch ?? '(snapshot)')}: **${b.state}**${b.recovery ? `; recovery: ${encodeURIComponent(b.recovery)}` : ''}`)),
+    '', 'Open A PR heads are deferred; A-only branches are retained. No branch deletions or reverse mirroring.', '',
     '| A PR | B PR | State | Source head |', '|---|---|---|---|',
     ...report.pairs.map(p => `| [#${p.a}](https://github.com/${source}/pull/${p.a}) | ${p.b ? `[#${p.b}](https://github.com/${target}/pull/${p.b})` : '—'} | ${p.state} | \`${p.sourceHead ?? ''}\` |`),
     report.error ? `\nStopped: ${report.error}` : '', ''].join('\n');

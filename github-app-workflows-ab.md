@@ -1,5 +1,9 @@
 # Setup workflow A/B
 
+Nâng cấp controller để đồng bộ mọi nhánh B → A:
+[file cần đổi, workflow giữ nguyên và cách nghiệm thu](all-branch-reconciliation.md).
+Push riêng lên nhánh ngoài main vẫn chờ lượt reconcile tiếp theo nếu giữ notifier dưới đây.
+
 **A: XBrainVN. B: TechX — source of truth. Controller: `TechX/xora-contribution-controller`.**
 
 ## 1. Giữ pipeline chạy tại B, không chạy tại A

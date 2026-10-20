@@ -8,6 +8,8 @@ PR identity is the expected bot author plus the B repository and `incoming/a-pr-
 
 Open PRs and closed PRs updated within seven days are reconciled; explicit PR events can reach older pairs. Pair-local failures are reported while other pairs continue. Overall failure remains visible. Main synchronization runs before pair processing.
 
+Every reconciliation also copies all current B branch heads to the same names at A. A-only branches are retained; no deletion, tag sync or reverse mirroring is performed. Divergent A heads are preserved atomically under `recovery/b-sync-*` before replacement, with explicit leases. Open A PR head branches are deferred to protect ongoing contributions. A branch error does not starve other branches or PRs, but fails the run visibly. Existing main-only push notifiers remain unchanged: other branch updates wait for the next scheduled/manual/event reconciliation. See [upgrade instructions](https://github.com/pho-veteran/github-org-contribution-lab/blob/main/all-branch-reconciliation.md).
+
 Set `BRIDGE_ENABLED=true` only after setup and policy checks. Push/PR events test the controller without App keys. Schedule/dispatch runs tests on the event's pinned main revision in the reconcile job before minting scoped App tokens. Policy and reconcile have separate concurrency groups.
 
 Production must restrict App B from writing or merging B/main and developers from merging A/main using supported GitHub protection. This is separate from merge-method guidance. Treat incoming PR code as untrusted in B CI: no secrets/write tokens in its build/test job. Guard B-only deployment workflows by repository before copying them to A.

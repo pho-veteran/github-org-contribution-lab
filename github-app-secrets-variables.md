@@ -1,6 +1,10 @@
 # Secrets và variables cho Xora contribution bridge
 
-**A = `XBrainVN`; B = `TechX`, là source of truth.** Controller vận hành là repo private **`TechX/xora-contribution-controller`**. Repo public `pho-veteran/xora-contribution-controller` chỉ chứa source bàn giao; không đặt credentials vận hành tại đó.
+> Luồng hiện tại: A chỉ gửi code bằng **Actions → Notify contribution bridge → Run workflow** với PR number và head SHA. Commit mới không tự sang B. B events/schedule vẫn đồng bộ lịch sử đã chấp nhận và phản hồi. Xem [hướng dẫn A/B](github-app-workflows-ab.md).
+>
+> Nâng cấp: App Sync cần **Actions: read**, admin A phải chấp nhận quyền mới của installation. Deploy controller trước notifier; giữ `BRIDGE_ENABLED=false` trong lúc thay đổi. Notifier phải có trên default branch `main` của A; cặp `xora-resolve-be` dùng `dev` để contribute/sync nhưng vẫn dispatch từ `main`. Bộ Bash bootstrap hiện dành cho cặp main/main; cặp dev và repo đang hoạt động cần migration được SRE review, không chạy lại bootstrap.
+
+**A = `XBrainVN`; B = `TechX-Corp`, là source of truth.** Controller vận hành là repo private **`TechX-Corp/xora-contribution-controller`**. Repo public `pho-veteran/xora-contribution-controller` chỉ chứa source bàn giao; không đặt credentials vận hành tại đó.
 
 ## 1. Cách lấy giá trị
 
@@ -31,7 +35,7 @@ Dùng **repository secrets/variables**, không chọn Environment secrets: workf
 
 ## 3. Controller — 2 secrets và 3 variables
 
-Chỉ đặt bảng này tại **`TechX/xora-contribution-controller`**.
+Chỉ đặt bảng này tại **`TechX-Corp/xora-contribution-controller`**.
 
 | Loại | Name — copy nguyên tên | Secret / Value cần điền | Lấy từ |
 |---|---|---|---|
@@ -67,13 +71,13 @@ Trong bảng này, **PEM Dispatch** và **Client ID Dispatch** là hai giá tr�
 | `XBrainVN/xora-platform-fe` | `CONTROLLER_DISPATCH_APP_PRIVATE_KEY` = PEM Dispatch | `CONTROLLER_DISPATCH_APP_CLIENT_ID` = Client ID Dispatch |
 | `XBrainVN/xora-resolve-be` | `CONTROLLER_DISPATCH_APP_PRIVATE_KEY` = PEM Dispatch | `CONTROLLER_DISPATCH_APP_CLIENT_ID` = Client ID Dispatch |
 | `XBrainVN/xora-resolve-agent` | `CONTROLLER_DISPATCH_APP_PRIVATE_KEY` = PEM Dispatch | `CONTROLLER_DISPATCH_APP_CLIENT_ID` = Client ID Dispatch |
-| `TechX/xora-evaluation-framework` | `CONTROLLER_DISPATCH_APP_PRIVATE_KEY` = PEM Dispatch | `CONTROLLER_DISPATCH_APP_CLIENT_ID` = Client ID Dispatch |
-| `TechX/xora-eval-framework-fe` | `CONTROLLER_DISPATCH_APP_PRIVATE_KEY` = PEM Dispatch | `CONTROLLER_DISPATCH_APP_CLIENT_ID` = Client ID Dispatch |
-| `TechX/xora-learning-loop` | `CONTROLLER_DISPATCH_APP_PRIVATE_KEY` = PEM Dispatch | `CONTROLLER_DISPATCH_APP_CLIENT_ID` = Client ID Dispatch |
-| `TechX/xora-platform` | `CONTROLLER_DISPATCH_APP_PRIVATE_KEY` = PEM Dispatch | `CONTROLLER_DISPATCH_APP_CLIENT_ID` = Client ID Dispatch |
-| `TechX/xora-platform-fe` | `CONTROLLER_DISPATCH_APP_PRIVATE_KEY` = PEM Dispatch | `CONTROLLER_DISPATCH_APP_CLIENT_ID` = Client ID Dispatch |
-| `TechX/xora-resolve-be` | `CONTROLLER_DISPATCH_APP_PRIVATE_KEY` = PEM Dispatch | `CONTROLLER_DISPATCH_APP_CLIENT_ID` = Client ID Dispatch |
-| `TechX/xora-resolve-agent` | `CONTROLLER_DISPATCH_APP_PRIVATE_KEY` = PEM Dispatch | `CONTROLLER_DISPATCH_APP_CLIENT_ID` = Client ID Dispatch |
+| `TechX-Corp/xora-evaluation-framework` | `CONTROLLER_DISPATCH_APP_PRIVATE_KEY` = PEM Dispatch | `CONTROLLER_DISPATCH_APP_CLIENT_ID` = Client ID Dispatch |
+| `TechX-Corp/xora-eval-framework-fe` | `CONTROLLER_DISPATCH_APP_PRIVATE_KEY` = PEM Dispatch | `CONTROLLER_DISPATCH_APP_CLIENT_ID` = Client ID Dispatch |
+| `TechX-Corp/xora-learning-loop` | `CONTROLLER_DISPATCH_APP_PRIVATE_KEY` = PEM Dispatch | `CONTROLLER_DISPATCH_APP_CLIENT_ID` = Client ID Dispatch |
+| `TechX-Corp/xora-platform` | `CONTROLLER_DISPATCH_APP_PRIVATE_KEY` = PEM Dispatch | `CONTROLLER_DISPATCH_APP_CLIENT_ID` = Client ID Dispatch |
+| `TechX-Corp/xora-platform-fe` | `CONTROLLER_DISPATCH_APP_PRIVATE_KEY` = PEM Dispatch | `CONTROLLER_DISPATCH_APP_CLIENT_ID` = Client ID Dispatch |
+| `TechX-Corp/xora-resolve-be` | `CONTROLLER_DISPATCH_APP_PRIVATE_KEY` = PEM Dispatch | `CONTROLLER_DISPATCH_APP_CLIENT_ID` = Client ID Dispatch |
+| `TechX-Corp/xora-resolve-agent` | `CONTROLLER_DISPATCH_APP_PRIVATE_KEY` = PEM Dispatch | `CONTROLLER_DISPATCH_APP_CLIENT_ID` = Client ID Dispatch |
 
 Controller cấu hình riêng theo mục 3. Tổng cộng **15 repo**, **16 repository secrets** và **17 repository variables**.
 
@@ -84,8 +88,8 @@ Controller cấu hình riêng theo mục 3. Tổng cộng **15 repo**, **16 repo
 | App | Cài vào đâu | Key được lưu ở đâu |
 |---|---|---|
 | Xora Contribution Sync | Chọn 7 repo `XBrainVN` | Controller |
-| Xora Contribution Transport | Chọn 7 repo `TechX` | Controller |
-| Xora Contribution Dispatch | Chỉ `TechX/xora-contribution-controller` | 14 repo A/B |
+| Xora Contribution Transport | Chọn 7 repo `TechX-Corp` | Controller |
+| Xora Contribution Dispatch | Chỉ `TechX-Corp/xora-contribution-controller` | 14 repo A/B |
 
 App Sync tạo tại TechX phải cho phép **Any account** để owner XBrainVN cài. Không cần một tài khoản có quyền ở cả hai org; mỗi bên đặt secrets/variables tại repo mình quản lý. Người quản lý App bàn giao PEM Dispatch cho admin XBrain qua kênh secrets, không commit PEM vào repo docs/code.
 

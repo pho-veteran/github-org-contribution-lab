@@ -1,5 +1,9 @@
 # Setup nhiều repo bằng các script Bash
 
+> Luồng hiện tại: A chỉ gửi code bằng **Actions → Notify contribution bridge → Run workflow** với PR number và head SHA. Commit mới không tự sang B. B events/schedule vẫn đồng bộ lịch sử đã chấp nhận và phản hồi. Xem [hướng dẫn A/B](github-app-workflows-ab.md).
+>
+> Nâng cấp: App Sync cần **Actions: read**, admin A phải chấp nhận quyền mới của installation. Deploy controller trước notifier; giữ `BRIDGE_ENABLED=false` trong lúc thay đổi. Notifier phải có trên default branch `main` của A; cặp `xora-resolve-be` dùng `dev` để contribute/sync nhưng vẫn dispatch từ `main`. Bộ Bash bootstrap hiện dành cho cặp main/main; cặp dev và repo đang hoạt động cần migration được SRE review, không chạy lại bootstrap.
+
 ## 1. Đầu vào và kết quả
 
 **B có code gốc. A đã có các repo private cùng tên, chưa có code.** Máy setup đã có SSH truy cập hai org. Script nhận danh sách link B, suy ra A theo tên repo và triển khai một bridge dùng chung **3 App + 1 controller**.
@@ -100,7 +104,7 @@ Tạo ba App theo [bảng permissions](github-app-setup.md#2-chuẩn-bị-và-t�
 
 | App | Installation — Only select repositories | Repository permissions |
 |---|---|---|
-| App A / Sync | Chọn các repo A | Contents, Pull requests, Workflows: write |
+| App A / Sync | Chọn các repo A | Contents, Pull requests, Workflows: write; Actions: read |
 | App B / Transport | Chọn các repo B | Contents, Pull requests: write |
 | App Dispatch | Chỉ controller | Actions: write |
 

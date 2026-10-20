@@ -150,7 +150,7 @@ set_secret() {
 }
 required_permissions() {
   case $1 in
-    source) printf '{"contents":"write","pull_requests":"write","workflows":"write"}' ;;
+    source) printf '{"contents":"write","pull_requests":"write","workflows":"write","actions":"read"}' ;;
     target) printf '{"contents":"write","pull_requests":"write"}' ;;
     dispatch) printf '{"actions":"write"}' ;;
   esac
@@ -220,7 +220,7 @@ render_notifier() {
   # Repository/owner names were validated before substitution (no sed metacharacters).
   sed -e "s/A_OWNER/${source%%/*}/g" -e "s/A_REPO/${source#*/}/g" \
     -e "s/B_OWNER/${target%%/*}/g" -e "s/B_REPO/${target#*/}/g" \
-    -e "s/CONTROLLER_REPO/${CONTROLLER#*/}/g" "$TEMPLATES/notifier/$NOTIFIER_PATH" | normalize
+    -e "s/CONTRIBUTION_BRANCH/main/g" -e "s/CONTROLLER_REPO/${CONTROLLER#*/}/g" "$TEMPLATES/notifier/$NOTIFIER_PATH" | normalize
 }
 remote() {
   local host=$SSH_B; [[ ${1%%/*} != "$ORG_A" ]] || host=$SSH_A

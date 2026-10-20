@@ -1,5 +1,22 @@
 # Proposal contribute giữa hai private repo bằng GitHub Apps và Actions
 
+## Luồng đề xuất hiện tại: A gửi thủ công một revision
+
+**Developer A:** mở PR → sửa thoải mái → khi ready, Run workflow với PR number + head SHA → B review/merge. Commit mới chưa gửi không xuất hiện ở B. Sau feedback, sửa và gửi SHA mới. AI không quản lý Terraform, App hoặc CI/controller.
+
+**SRE:** bảo vệ main/dev, giữ Actions bật, chỉ notifier enabled tại A; pipeline ứng dụng được guard chỉ chạy tại B. Controller kiểm run manual/actor/SHA trước transport; schedule và B events chỉ reconcile. Sync App thêm Actions read; không thêm App thứ tư.
+
+| Tình huống | Kết quả |
+|---|---|
+| PR A có nhiều lần sửa nhưng chưa gửi | B chưa có PR |
+| Đã gửi SHA 1, A tiếp tục SHA 2 | B vẫn SHA 1 |
+| Run workflow với SHA 2 | B nhận SHA 2 nếu PR vẫn đúng revision |
+| B merge | Đồng bộ lịch sử đã chấp nhận về A |
+
+[Hướng dẫn thao tác A/B và rollout](github-app-workflows-ab.md). **Các ảnh/kết quả phía dưới là evidence lab phiên bản tự động trước đây**, không chứng minh cơ chế manual mới. Kết quả nghiệm thu manual sẽ được ghi riêng sau test thật.
+
+---
+
 ## 1. Vấn đề và giải pháp tổng thể
 
 Team ở org A cần gửi code vào private repo của org B, giữ tác giả commit mà không thêm từng developer làm member/collaborator tại B. Với gói trả phí, các tài khoản được cấp quyền trực tiếp có thể làm tăng số seat.

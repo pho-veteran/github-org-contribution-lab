@@ -8,11 +8,11 @@ on:
         required: false
         type: string
       source_sha:
-        description: Event SHA for traceability; controller reads actual PRs and B main
+        description: Exact submitted A PR SHA, or B event SHA for reconciliation
         required: false
         type: string
       source_run_id:
-        description: B notification workflow run ID
+        description: Source notifier run ID; A submissions require a verified successful manual run
         required: false
         type: string
       source_event:
@@ -95,6 +95,7 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
           permission-workflows: write
+          permission-actions: ${{ inputs.source_event == 'workflow_dispatch' && 'read' || '' }}
       - name: Token scoped only to repo B without Workflows write
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
         id: target

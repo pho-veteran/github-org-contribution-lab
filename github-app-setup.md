@@ -1,6 +1,6 @@
 # Setup contribution bridge cho nhiều repo
 
-Nếu B đã có code, A đã có repo rỗng cùng tên và máy có SSH hai bên, dùng [hướng dẫn setup bằng script](github-app-quick-setup.md): nhập link B → kiểm tra repo → cấu hình → duyệt PR → kích hoạt. Tài liệu dưới đây mô tả cấu trúc và cấu hình tương ứng.
+Nếu B đã có code, A đã có repo rỗng cùng tên và máy có SSH hai bên, dùng [hướng dẫn setup bằng Bash](github-app-quick-setup.md). Thư mục [setup/](setup/) có 5 script riêng: `01-init.sh` → `02-prepare.sh` → cài App → `03-apply.sh` → B duyệt PR setup → `04-activate.sh` → `05-verify.sh`. Đã có sẵn 7 link repo B; apply tự đưa code B/main vào A/main rỗng và cấu hình các repo. Tài liệu dưới đây giải thích cấu trúc và cấu hình tương ứng, không cần làm lại thủ công những bước script đã thực hiện.
 
 ## 1. Kiến trúc dùng chung
 

@@ -1,4 +1,4 @@
-# Setup nhiều repo bằng script
+# Setup nhiều repo bằng các script Bash
 
 ## 1. Đầu vào và kết quả
 
@@ -15,23 +15,33 @@
 
 Script **không tạo repo A**, không tự merge PR B, không ghi đè A/main đã lệch và không tự thay controller/notifier khác cấu hình mong đợi. SSH dùng cho Git; `gh` dùng cho API, secrets và PR. SSH key không thay thế API credential.
 
-[Script](setup/setup.mjs) nằm trong thư mục `setup/` ở root repo, dùng Node.js built-ins, không cần `npm install`. Giữ cả `setup/` và `templates/` khi tải source; script đọc bộ mẫu controller/notifier từ `templates/`. [Thiết kế và quyền chi tiết](github-app-setup.md).
+Mỗi quá trình có một script riêng trong [setup/](setup/), dùng chung `.bridge-setup/setup.json`:
+
+| Script | Công việc |
+|---|---|
+| [01-init.sh](setup/01-init.sh) | Sinh cấu hình local với 7 repo B có sẵn |
+| [02-prepare.sh](setup/02-prepare.sh) | Kiểm tra repo/quyền; tạo controller private nếu thiếu |
+| [03-apply.sh](setup/03-apply.sh) | Init code B → A, cấu hình controller/secrets, mở PR notifier tại B |
+| [04-activate.sh](setup/04-activate.sh) | Sau khi B merge PR setup: kiểm tra, bật bridge và gọi reconcile |
+| [05-verify.sh](setup/05-verify.sh) | Kiểm tra kết quả Actions, notifier và SHA main của mọi cặp |
+
+[lib.sh](setup/lib.sh) chứa hàm dùng chung, không chạy trực tiếp. Giữ cả `setup/` và `templates/` khi tải source; các script đọc mẫu controller/notifier từ `templates/`. [Thiết kế và quyền chi tiết](github-app-setup.md).
 
 **Lấy script về máy trước:**
 
-```powershell
+```bash
 git clone https://github.com/pho-veteran/github-org-contribution-lab.git
 cd github-org-contribution-lab
-node setup/setup.mjs --help
+bash setup/01-init.sh --help
 ```
 
-`.mjs` là JavaScript module chạy bằng Node.js. Các lệnh dưới đây chạy từ thư mục vừa clone.
+Các lệnh dưới đây chạy trong Bash tại thư mục vừa clone: Git Bash trên Windows, Bash trên Linux hoặc Bash 4+ trên macOS. Mỗi script có thể chạy riêng; dùng cùng `--dir` để tiếp tục đúng cấu hình. `setup.json` của bản setup trước vẫn dùng được, không cần init lại.
 
 ## 2. Chuẩn bị một lần
 
-Máy setup cần **Node.js 24, Git, OpenSSH và GitHub CLI**. Hai tài khoản `gh` cần quyền admin trên các repo tương ứng; tài khoản B cần quyền tạo repo controller. Với OAuth token của `gh`, cấp scope `repo`, `read:org`, `workflow`; hoàn tất SSO theo chính sách org.
+Máy setup cần **Bash 4+, Git, OpenSSH, GitHub CLI (`gh`), `jq`, `curl` và OpenSSL**. Bước apply cần **Node.js 24** để chạy tests controller; phần điều phối setup chạy bằng Bash, controller trên Actions vẫn dùng Node.js. Không cần `npm install`. Hai tài khoản `gh` cần quyền admin trên các repo tương ứng; tài khoản B cần quyền tạo repo controller. Với OAuth token của `gh`, cấp scope `repo`, `read:org`, `workflow`; hoàn tất SSO theo chính sách org. Những công cụ/tài khoản/SSH đã có thì dùng lại.
 
-```powershell
+```bash
 gh auth login --hostname github.com --git-protocol ssh --scopes repo,read:org,workflow
 ```
 
@@ -71,9 +81,9 @@ https://github.com/TechX-Corp/xora-resolve-agent
 
 Thay `A_OWNER`, `ADMIN_A`, `ADMIN_B` và hai SSH aliases dưới đây bằng giá trị thật. Các repo B phải private, không phải fork và có default branch `main`; script kiểm tra ở bước prepare. A tương ứng phải private, độc lập và rỗng. Khi chạy lại, A có main cùng lịch sử/đi sau B vẫn được chấp nhận.
 
-```powershell
-node setup/setup.mjs init --org-a A_OWNER --account-a ADMIN_A --account-b ADMIN_B --ssh-a github-a --ssh-b github-b --dir .bridge-setup
-node setup/setup.mjs prepare --dir .bridge-setup
+```bash
+bash setup/01-init.sh --org-a A_OWNER --account-a ADMIN_A --account-b ADMIN_B --ssh-a github-a --ssh-b github-b --dir .bridge-setup
+bash setup/02-prepare.sh --dir .bridge-setup
 ```
 
 `init` chỉ ghi local; với danh sách mặc định, controller là `TechX-Corp/contribution-controller`, đổi tên repo bằng `--controller TEN_REPO`. Thư mục `--dir` phải mới hoặc rỗng. Script sinh `setup.json` gồm mapping và SSH aliases; `.gitignore` tại đó chặn commit dữ liệu setup. Cấu hình đã sinh trước đó không tự đổi theo danh sách mới.
@@ -110,8 +120,8 @@ Review workflow sẵn có tại B: deploy/CD chỉ chạy ở B, build/test cont
 
 ## 5. Chạy cấu hình tự động
 
-```powershell
-node setup/setup.mjs apply --dir .bridge-setup
+```bash
+bash setup/03-apply.sh --dir .bridge-setup
 ```
 
 Script lần lượt:
@@ -127,7 +137,7 @@ Kết quả và link PR nằm trong `.bridge-setup/apply-report.json`. Nếu l�
 
 **Phạm vi SSH này chỉ là setup trên máy admin.** Controller Actions vẫn dùng installation token của App; không đưa SSH private key của admin lên GitHub.
 
-**Code B được lấy ở đâu?** Bước `apply` gọi `Transport.bootstrap()` trong script: `git init --bare` → fetch toàn bộ lịch sử B/main qua SSH → push thành A/main → kiểm tra SHA. Đây là bước đưa code vào A rỗng; `init` chỉ sinh cấu hình. Không checkout working tree và không chạy code ứng dụng. Sau bootstrap, developer clone repo A bình thường để làm việc.
+**Code B được lấy ở đâu?** `03-apply.sh` gọi hàm `bootstrap()` trong `lib.sh`: `git init --bare` → fetch toàn bộ lịch sử B/main qua SSH → push thành A/main → kiểm tra SHA. Đây là bước đưa code vào A rỗng; `01-init.sh` chỉ sinh cấu hình. Không checkout working tree và không chạy code ứng dụng. Sau bootstrap, developer clone repo A bình thường để làm việc.
 
 ## 6. Duyệt và kích hoạt
 
@@ -143,16 +153,16 @@ Script không tự cấu hình protection vì còn phụ thuộc gói GitHub, te
 
 Sau khi review xong, đặt `manual.protectionsReviewed` thành `true`, rồi chạy:
 
-```powershell
-node setup/setup.mjs activate --dir .bridge-setup
+```bash
+bash setup/04-activate.sh --dir .bridge-setup
 ```
 
 Script kiểm tra notifier đã merge tại tất cả B, credentials, registry và policy controller đã Success, rồi bật `BRIDGE_ENABLED=true` và dispatch một lượt cho tất cả cặp. **`dispatched-not-yet-verified` chưa phải hoàn tất.**
 
 Chờ Actions rồi kiểm tra:
 
-```powershell
-node setup/setup.mjs verify --dir .bridge-setup
+```bash
+bash setup/05-verify.sh --dir .bridge-setup
 ```
 
 Chỉ trả `configuration-and-main-sync-verified` khi mọi cặp có A/main = B/main, notifier đúng ở cả hai bên và một lượt reconcile tất cả cặp sau activate đã Success. Exit code `2` nghĩa là chưa sẵn sàng; đọc report, chờ/xử lý lỗi rồi chạy verify lại. Secrets được kiểm tra tên/Client ID và kết quả Actions; GitHub không cho đọc ngược giá trị secret.
@@ -176,9 +186,8 @@ Script hỗ trợ bootstrap Git history trên `main`; Git LFS/submodule cần ch
 
 Kiểm tra script:
 
-```powershell
-node --test setup/setup.test.mjs
-node --test templates/controller/tests/*.test.mjs
+```bash
+bash setup/test.sh
 ```
 
-Tests setup dùng API giả lập cho nhiều cặp và Git thật tại local cho bootstrap, notifier, chạy lại và chống ghi đè. Chúng không thay thế nghiệm thu permissions/SSH/Actions thực tế trong môi trường nhận bàn giao.
+Tests setup dùng API giả lập cho nhiều cặp và Git thật tại local cho bootstrap, notifier, chạy lại và chống ghi đè; bước apply trong test cũng chạy bộ tests controller. Chúng không thay thế nghiệm thu permissions/SSH/Actions thực tế trong môi trường nhận bàn giao.

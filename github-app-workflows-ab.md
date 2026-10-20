@@ -1,183 +1,176 @@
-# Setup CI dispatch tại A và reconcile khi B/main thay đổi
+# Setup workflow A/B
 
-**A = `XBrainVN`. B = `TechX`, là source of truth.** Controller private: `TechX/xora-contribution-controller`.
+**A: XBrainVN. B: TechX — source of truth. Controller: `TechX/xora-contribution-controller`.**
 
-## 1. Trạng thái cần đạt
+## 1. Giữ pipeline chạy tại B, không chạy tại A
 
-| Nơi | Workflow chạy | Vai trò |
+| Repo | Pipeline build/test/deploy hiện có | Workflow mới |
 |---|---|---|
-| 7 repo A | Chỉ notifier `notify-controller.yml`; CI ứng dụng cũ đã disable tại A | PR mới, commit vào PR, comment/review gọi controller |
-| 7 repo B | Giữ pipeline hiện có; thêm `notify-controller.yml` | Review/comment gọi controller; merge hoặc push B/main gọi reconcile |
-| Controller | `controller.yml` | Chuyển contribution A → B, đồng bộ feedback, đưa đúng B/main về A/main và xử lý đóng PR A |
+| B — `TechX/<repo>` | Giữ nguyên, tiếp tục chạy | Thêm `notify-controller.yml` để gọi controller khi review/comment hoặc B/main thay đổi |
+| A — `XBrainVN/<repo>` | Disable từng workflow tại A | Chỉ bật `notify-controller.yml` để gọi controller khi PR/commit/comment thay đổi |
 
-**“A chỉ có CI mới” nghĩa là chỉ chạy CI dispatch.** Các file pipeline B vẫn có trong Git history của A vì A/main phải giống B/main. Tắt pipeline cũ bằng trạng thái workflow tại repo A, không xóa/sửa riêng file tại A/main.
+Tại A: **Actions → chọn pipeline cũ → `…` → Disable workflow**. Nếu đã tắt rồi thì không cần làm lại. **Giữ Actions của repo được bật.**
 
-Nếu đã disable từng workflow cũ tại A thì giữ nguyên. **Không disable GitHub Actions toàn repo A**, vì notifier cũng cần Actions.
+Không xóa file pipeline khỏi A/main. Bot đồng bộ nguyên B/main về A/main nên file vẫn có ở A; trạng thái **Disable workflow tại A** quyết định pipeline đó không chạy. Tắt tại A không ảnh hưởng pipeline B. Nếu B thêm/đổi tên workflow, kiểm tra và disable workflow ứng dụng mới tại A.
 
-## 2. Điều kiện trước khi thêm workflow
+## 2. Setup bên A
 
-| Kiểm tra | Yêu cầu |
+Làm tại từng repo `XBrainVN/<repo>`:
+
+1. Repo A phải có `main` đã bootstrap từ B/main.
+2. Giữ các pipeline ứng dụng cũ disabled như mục 1.
+3. Vào **Settings → Secrets and variables → Actions**, đặt:
+
+| Loại | Tên | Giá trị |
+|---|---|---|
+| Secret | `CONTROLLER_DISPATCH_APP_PRIVATE_KEY` | Toàn bộ PEM của **Xora Contribution Dispatch** |
+| Variable | `CONTROLLER_DISPATCH_APP_CLIENT_ID` | Client ID của **Xora Contribution Dispatch** |
+
+4. Workflow mới ở A là **`.github/workflows/notify-controller.yml`**, dùng đúng code ở mục 4. **Không commit riêng tại A**: thêm file tại B, rồi controller đưa file về A ở mục 5.
+5. Sau khi file có tại A, vào **Actions → Notify contribution bridge** và kiểm tra workflow enabled. Nếu từng disable file này thì chọn **Enable workflow**.
+
+Kết quả: developer mở PR hoặc push thêm commit vào PR tại A → notifier A gọi controller → controller mở/cập nhật PR tại B.
+
+## 3. Setup bên B
+
+Làm tại từng repo `TechX/<repo>`:
+
+1. Giữ nguyên các pipeline build/test/deploy đang dùng.
+2. Đặt cùng secret `CONTROLLER_DISPATCH_APP_PRIVATE_KEY` và variable `CONTROLLER_DISPATCH_APP_CLIENT_ID` như bên A.
+3. Tạo branch, thêm file **`.github/workflows/notify-controller.yml`** bằng code ở mục 4.
+4. Mở PR để maintainer B review và merge.
+
+Kết quả: merge PR hoặc push lên B/main → notifier B gọi controller → controller đồng bộ B/main về A/main. Pipeline B vẫn chạy theo trigger cũ; notifier là workflow riêng, không cần thêm job vào pipeline đang có.
+
+App Dispatch chỉ cài trên **controller**, không cài trên 14 repo A/B. Các repo A/B dùng Client ID + PEM của App đó để gọi controller.
+
+## 4. Code workflow dùng ở cả hai bên
+
+Thay **mọi `REPO_NAME`** trong YAML bằng tên repo của cặp đang setup, ví dụ `xora-platform`. `XBrainVN`, `TechX` và tên controller đã điền sẵn.
+
+| Vị trí | Cách đưa file vào |
 |---|---|
-| Controller | Đã push code, registry có 7 cặp XBrainVN → TechX; workflow trỏ đúng controller; job policy Success |
-| Controller credentials | 2 secrets + 3 variables theo [bảng credentials](github-app-secrets-variables.md); giữ `BRIDGE_ENABLED=false` trong giai đoạn cấu hình |
-| Credentials A/B | Mỗi repo có `CONTROLLER_DISPATCH_APP_CLIENT_ID` và `CONTROLLER_DISPATCH_APP_PRIVATE_KEY` của cùng App Dispatch |
-| App installation | Sync chọn 7 repo A; Transport chọn 7 repo B; Dispatch chỉ chọn controller |
-| Main A/B | B/main có code; A/main đã bootstrap từ B/main. Controller không tự tạo main cho A rỗng |
-| Quyền main | Developer không ghi/merge A/main; App Sync được reconcile A/main. App Transport không ghi/merge B/main hoặc bypass protection |
-
-Không phát sinh thêm secret hoặc variable cho workflow mới.
-
-## 3. Giữ pipeline B chạy ở B, không chạy ở A
-
-### Trạng thái workflow tại A
-
-Tại **từng repo XBrainVN → Actions → chọn workflow ứng dụng cũ → menu `…` → Disable workflow**. Các workflow đã tắt thì không cần làm lại. Không tắt notifier mới.
-
-Có thể kiểm tra bằng CLI của admin A:
-
-```bash
-gh workflow list --all --repo XBrainVN/xora-platform
-```
-
-Để tắt một workflow còn active, dùng ID hoặc tên file thực tế từ danh sách:
-
-```bash
-gh workflow disable build.yml --repo XBrainVN/xora-platform
-```
-
-`build.yml` chỉ là ví dụ; chọn đúng workflow của repo. Đây là trạng thái tại A, không làm disable pipeline tương ứng ở B. [GitHub CLI: disable workflow](https://cli.github.com/manual/gh_workflow_disable).
-
-### Guard cho các file pipeline B được sao sang A
-
-Để cả workflow mới sau này cũng không chạy job ứng dụng tại A, maintainer B đặt điều kiện repo tại **mỗi job** của pipeline chỉ dành cho B. Không thay các steps/build/test/deploy hay trigger vốn có.
-
-Ví dụ tại `TechX/xora-platform`, job chưa có `if`:
+| `TechX/REPO_NAME/.github/workflows/notify-controller.yml` | Thêm code dưới đây bằng PR tại B |
+| `XBrainVN/REPO_NAME/.github/workflows/notify-controller.yml` | Controller đồng bộ cùng file từ B/main về A/main |
 
 ```yaml
+name: Notify contribution bridge
+on:
+  push:
+    branches: [main]
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, closed, ready_for_review, edited]
+  issue_comment:
+    types: [created, edited]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+  pull_request_review_comment:
+    types: [created, edited]
+
+permissions: {}
+
+concurrency:
+  group: notify-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.issue.number || 'main' }}
+  cancel-in-progress: false
+
 jobs:
-  build:
-    if: github.repository == 'TechX/xora-platform'
+  notify:
+    if: >-
+      (github.repository == 'XBrainVN/REPO_NAME' || github.repository == 'TechX/REPO_NAME') &&
+      (
+        (github.event_name == 'push' && github.repository == 'TechX/REPO_NAME' && github.ref == 'refs/heads/main') ||
+        (github.event.sender.type == 'User' &&
+          (
+            (github.event_name == 'issue_comment' && github.event.issue.pull_request) ||
+            ((github.event_name == 'pull_request_target' || github.event_name == 'pull_request_review' || github.event_name == 'pull_request_review_comment') &&
+              github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository)
+          )
+        )
+      )
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      # Giữ nguyên các steps hiện có.
+      # No checkout, PR code, dependencies, or interpolated comment text in this job.
+      - name: Token scoped only to controller Actions
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
+        id: dispatch
+        with:
+          client-id: ${{ vars.CONTROLLER_DISPATCH_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CONTROLLER_DISPATCH_APP_PRIVATE_KEY }}
+          owner: TechX
+          repositories: xora-contribution-controller
+          permission-actions: write
+      - name: Dispatch trusted controller main
+        env:
+          DISPATCH_TOKEN: ${{ steps.dispatch.outputs.token }}
+          SOURCE_REPO: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_RUN_ID: ${{ github.run_id }}
+          SOURCE_EVENT: ${{ github.event_name }}
+          SOURCE_PR: ${{ github.event.pull_request.number || github.event.issue.number || '' }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync } from 'node:fs';
+          const { SOURCE_REPO: repo, SOURCE_SHA: sha, SOURCE_RUN_ID: runId, SOURCE_EVENT: event, SOURCE_PR: pr } = process.env;
+          if (!['XBrainVN/REPO_NAME', 'TechX/REPO_NAME'].includes(repo)
+            || !/^[a-f0-9]{40}$/.test(sha) || !/^[1-9][0-9]*$/.test(runId)
+            || !['push','pull_request_target','issue_comment','pull_request_review','pull_request_review_comment'].includes(event)
+            || (event === 'push' ? repo !== 'TechX/REPO_NAME' || Boolean(pr) : !/^[1-9][0-9]*$/.test(pr))) throw new Error('Invalid source event');
+          const response = await fetch('https://api.github.com/repos/TechX/xora-contribution-controller/actions/workflows/controller.yml/dispatches', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${process.env.DISPATCH_TOKEN}`,
+              Accept: 'application/vnd.github+json',
+              'Content-Type': 'application/json',
+              'X-GitHub-Api-Version': '2022-11-28',
+            },
+            body: JSON.stringify({ ref: 'main', inputs: {
+              source_repo: repo, source_sha: sha, source_run_id: runId, source_event: event, source_pr: pr,
+            } }),
+            signal: AbortSignal.timeout(30000),
+          });
+          if (!response.ok) throw new Error(`Controller dispatch failed: HTTP ${response.status}`);
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, `# Contribution event dispatched\n\nSource: ${repo} / ${event}${pr ? ` / PR #${pr}` : ''}\n\nEvent SHA: \`${sha}\`\n\nController: TechX/xora-contribution-controller / controller.yml / main\n\nSource run: https://github.com/${repo}/actions/runs/${runId}\n\nDispatch accepted: HTTP ${response.status}. Inspect the controller run for the reconciliation result.\n`);
+          NODE
 ```
 
-Nếu job đã có điều kiện, **ghép thêm**, không thay mất điều kiện cũ. Ví dụ:
+File trên xử lý cả hai phía:
 
-```yaml
-# Trước
-if: ${{ always() && needs.build.result == 'success' }}
-
-# Sau
-if: ${{ github.repository == 'TechX/xora-platform' && (always() && needs.build.result == 'success') }}
-```
-
-Áp dụng cả job gọi reusable workflow và các job deploy/cleanup chạy với `always()`. Thay tên repo theo từng cặp. Không thêm guard chỉ-B này vào notifier, vì notifier phải chạy tại cả A/B.
-
-Tại B, điều kiện repo là đúng nên pipeline vẫn giữ hành vi trước đó. Tại A, job sẽ bị skip; workflow có thể vẫn hiện lượt chạy Skipped nếu chưa bị disable. Muốn A không có lượt chạy pipeline cũ thì tiếp tục giữ chúng disabled. [GitHub: điều kiện chạy job](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-jobs-with-conditions).
-
-Mỗi khi B thêm/đổi tên workflow, review guard trước khi merge và kiểm tra danh sách workflow tại A sau reconcile. Việc tắt các workflow cũ không tự bảo đảm mọi workflow mới đều bị tắt.
-
-## 4. Thêm notifier vào từng repo B
-
-Dùng **một file chung cho cả A/B**: [templates/notifier/.github/workflows/notify-controller.yml](templates/notifier/.github/workflows/notify-controller.yml). File được commit vào B, controller đồng bộ cùng file về A. Không tạo workflow reconcile thứ hai trùng chức năng.
-
-| Placeholder trong mẫu | Giá trị |
-|---|---|
-| `A_OWNER` | `XBrainVN` |
-| `B_OWNER` | `TechX` |
-| `A_REPO`, `B_REPO` | Cùng tên repo của cặp đang cài |
-| `CONTROLLER_REPO` | `xora-contribution-controller` |
-
-Ví dụ cài cho `xora-platform`, chạy bằng Bash với credential của maintainer B:
-
-```bash
-# Nếu đã clone repo docs thì dùng thư mục đó.
-git clone https://github.com/pho-veteran/github-org-contribution-lab.git bridge-docs
-git clone git@github.com:TechX/xora-platform.git xora-platform
-
-cd xora-platform
-git switch -c setup/notify-controller
-mkdir -p .github/workflows
-
-sed \
-  -e 's/A_OWNER/XBrainVN/g' \
-  -e 's/B_OWNER/TechX/g' \
-  -e 's/A_REPO/xora-platform/g' \
-  -e 's/B_REPO/xora-platform/g' \
-  -e 's/CONTROLLER_REPO/xora-contribution-controller/g' \
-  ../bridge-docs/templates/notifier/.github/workflows/notify-controller.yml \
-  > .github/workflows/notify-controller.yml
-
-git add .github/workflows/notify-controller.yml
-git diff --cached -- .github/workflows/notify-controller.yml
-git commit -m "Notify contribution controller on repository events"
-git push -u origin setup/notify-controller
-gh pr create --repo TechX/xora-platform --base main \
-  --title "Configure contribution notifier" \
-  --body "Add A/B event dispatch and reconciliation trigger for B/main changes."
-```
-
-Nếu file notifier đã tồn tại, mở và đối chiếu trước; không ghi đè cấu hình đang dùng. Dùng SSH alias B thay `github.com` nếu cần. Review nội dung file và diff trên PR trước khi merge.
-
-Lặp lại cho đủ 7 cặp; mỗi repo có file notifier đã thay đúng tên:
-
-| A | B |
-|---|---|
-| `XBrainVN/xora-evaluation-framework` | `TechX/xora-evaluation-framework` |
-| `XBrainVN/xora-eval-framework-fe` | `TechX/xora-eval-framework-fe` |
-| `XBrainVN/xora-learning-loop` | `TechX/xora-learning-loop` |
-| `XBrainVN/xora-platform` | `TechX/xora-platform` |
-| `XBrainVN/xora-platform-fe` | `TechX/xora-platform-fe` |
-| `XBrainVN/xora-resolve-be` | `TechX/xora-resolve-be` |
-| `XBrainVN/xora-resolve-agent` | `TechX/xora-resolve-agent` |
-
-Maintainer B review và merge PR notifier. Pipeline B vẫn chạy theo trigger vốn có; notifier chạy độc lập.
-
-### Event thực tế của notifier
-
-| Event | Tại A | Tại B |
+| Sự kiện | A | B |
 |---|---|---|
-| PR mở, thêm commit, reopen, close, ready for review, edit | Dispatch khi PR cùng repo, base main và sự kiện từ người dùng | Tương tự |
-| Conversation comment tạo/sửa | Dispatch cho comment PR từ người dùng | Tương tự |
-| Review / inline review comment | Dispatch khi thỏa điều kiện PR và sender | Tương tự |
-| Push main, gồm merge PR vào main | Không dispatch job; tránh vòng lặp khi bot sync A | Dispatch reconcile ngay theo event |
+| Người dùng mở/cập nhật PR cùng repo, base main | Gọi controller | Gọi controller |
+| Người dùng comment/review PR | Gọi controller | Gọi controller |
+| Push/merge vào main | Job notify không chạy, tránh vòng lặp sync | Gọi controller để reconcile |
 
-Notifier không checkout hay chạy code PR. Giữ nguyên allowlist repo, lọc sender/event, token scope chỉ controller và `permissions: {}` của mẫu.
+Notifier không checkout hay chạy code PR. Giữ nguyên các điều kiện lọc repo/event và phạm vi token của YAML.
 
-**B merge → push B/main → notifier → workflow_dispatch controller → reconcile đúng cặp.** Controller đọc B/main hiện tại, không chờ lịch polling. “Ngay” là workflow được kích hoạt bởi sự kiện; vẫn có thời gian xếp hàng Actions.
+Áp dụng lần lượt cho 7 tên repo:
 
-Reconcile **không chờ pipeline build/deploy hiện có ở B hoàn tất**. Nếu B cần CI đạt trước khi chấp nhận code thì dùng required checks trước merge. Không biến notifier thành job phụ thuộc deploy.
-
-Nếu automation push B/main bằng `GITHUB_TOKEN`, push đó không kích hoạt workflow push tiếp theo. Automation này cần dùng App token được cấp quyền phù hợp hoặc dispatch controller riêng. [GitHub: quy tắc kích hoạt workflow](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
-
-## 5. Đưa notifier về A và bật vận hành
-
-Sau khi notifier tại **mọi B** đã merge, A/main đã có lịch sử bootstrap, credentials/installations/guards đã đủ:
-
-1. Tại controller, đổi variable `BRIDGE_ENABLED` thành `true`.
-2. **Actions → Contribution bridge controller → Run workflow → main**, để trống inputs.
-3. Kiểm tra đủ 7 job reconcile thành công và A/main trùng B/main. Đây là lần chạy khởi tạo để đưa notifier về A, không phải cách kích hoạt cho mỗi merge sau này.
-4. Tại mỗi A, mở **Actions** và kiểm tra **Notify contribution bridge** đang enabled; nếu trước đó đã disable nhầm file này thì bật lại:
-
-```bash
-gh workflow enable notify-controller.yml --repo XBrainVN/xora-platform
-gh workflow list --all --repo XBrainVN/xora-platform
+```text
+xora-evaluation-framework
+xora-eval-framework-fe
+xora-learning-loop
+xora-platform
+xora-platform-fe
+xora-resolve-be
+xora-resolve-agent
 ```
 
-Chỉ bật notifier, không bật lại pipeline ứng dụng cũ. Không commit workflow riêng tại A/main; không tạo một lịch sử cấu hình khác B/main.
+## 5. Bật chạy lần đầu và kiểm tra
 
-## 6. Nghiệm thu
+Sau khi cả 7 PR thêm notifier tại B đã merge, A đã bootstrap, 3 App đã cài đúng repo và [credentials](github-app-secrets-variables.md) đã đủ:
 
-| Thao tác | Kết quả cần thấy |
-|---|---|
-| Mở PR tại A, push thêm commit | Notifier A chạy; controller mở/cập nhật đúng một PR B |
-| B request changes có nội dung; A sửa và comment | Feedback/commit được chuyển đúng chiều; conversation comment đồng bộ |
-| B merge bằng **Create a merge commit** | Pipeline hiện có tại B chạy như trước; notifier B gọi controller mà không cần Run workflow thủ công |
-| Controller xử lý B merge | A/main đúng SHA B/main, commit gốc giữ identity; PR A đóng khi contribution được accepted |
-| Kiểm tra Actions tại A | Notifier hoạt động; pipeline ứng dụng cũ disabled, các job B-only không chạy tại A |
-| Chạy lại hoặc thử cặp thứ hai | Không tạo trùng PR/comment, không dispatch sang cặp khác |
+1. Tại controller, đổi variable **`BRIDGE_ENABLED` thành `true`**.
+2. **Actions → Contribution bridge controller → Run workflow → main**, để trống inputs.
+3. Chờ đủ 7 job reconcile thành công. Kiểm tra A/main trùng B/main và A đã nhận file notifier.
+4. Kiểm tra tại A: notifier enabled, các pipeline ứng dụng vẫn disabled.
+5. Thử mở PR A → thêm commit → B nhận PR/commit → B **Create a merge commit** → notifier B tự chạy → A/main cập nhật → PR A đóng.
 
-Kiểm tra cả **notifier run và controller run**. HTTP dispatch thành công chỉ là controller đã nhận yêu cầu; đọc job `Reconcile <id>` và summary để xác nhận kết quả.
+Sau lần khởi tạo, **không cần bấm Run workflow mỗi khi B merge**. Push B/main tự kích hoạt notifier; thời điểm chạy phụ thuộc hàng đợi Actions.
 
-Tài liệu này hướng dẫn cấu hình; không xác nhận các workflow private đã được thay đổi hoặc chạy thử. [Bảng secrets/variables](github-app-secrets-variables.md) · [Guide controller](github-app-setup.md).
+Reconcile không chờ build/deploy tại B hoàn tất. Nếu yêu cầu CI thành công trước khi nhận code thì đặt required checks trước merge. Nếu automation push B/main bằng `GITHUB_TOKEN`, cần dispatch riêng hoặc dùng App token phù hợp vì push đó không kích hoạt workflow tiếp theo.
+
+Kiểm tra **cả notifier và controller run**: notifier Success chỉ chứng minh yêu cầu dispatch được gửi, chưa chứng minh main đã đồng bộ.
+
+[GitHub: disable workflow](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows) · [GitHub: trigger workflow](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).

@@ -57,6 +57,8 @@ App A cần Workflows write để nhận workflow từ B. App B cần Contents w
 
 ### Credentials
 
+Với **XBrainVN → TechX**, dùng [bảng secrets/variables cho controller và từng repo, kèm cách lấy giá trị](github-app-secrets-variables.md).
+
 Đặt tại **Settings → Secrets and variables → Actions**:
 
 | Nơi đặt | Loại | Tên | Giá trị |

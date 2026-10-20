@@ -94,6 +94,8 @@ Nếu cần danh sách khác, truyền `--repos repos-b.txt` cho init; file có 
 
 ## 4. Cài App và điền cấu hình
 
+Nếu cần điền trên giao diện GitHub, xem [bảng secrets/variables cho XBrainVN → TechX](github-app-secrets-variables.md). Bước `03-apply.sh` sẽ tự đặt các mục này khi dùng luồng setup bằng script.
+
 Tạo ba App theo [bảng permissions](github-app-setup.md#2-chuẩn-bị-và-tạo-ba-app--làm-một-lần), tắt webhook:
 
 | App | Installation — Only select repositories | Repository permissions |

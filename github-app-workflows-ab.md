@@ -135,17 +135,21 @@ File trên xử lý cả hai phía:
 
 Notifier không checkout hay chạy code PR. Giữ nguyên các điều kiện lọc repo/event và phạm vi token của YAML.
 
-Áp dụng lần lượt cho 7 tên repo:
+### Bảng tham chiếu repo A/B
 
-```text
-xora-evaluation-framework
-xora-eval-framework-fe
-xora-learning-loop
-xora-platform
-xora-platform-fe
-xora-resolve-be
-xora-resolve-agent
-```
+Mỗi dòng là một cặp. Dùng giá trị cột `REPO_NAME` để thay mọi `REPO_NAME` trong YAML phía trên. **B là source of truth; main đồng bộ B → A.**
+
+| `REPO_NAME` | Repo A — contribute | Repo B — review/merge, source of truth |
+|---|---|---|
+| `xora-evaluation-framework` | [XBrainVN/xora-evaluation-framework](https://github.com/XBrainVN/xora-evaluation-framework) | [TechX/xora-evaluation-framework](https://github.com/TechX/xora-evaluation-framework) |
+| `xora-eval-framework-fe` | [XBrainVN/xora-eval-framework-fe](https://github.com/XBrainVN/xora-eval-framework-fe) | [TechX/xora-eval-framework-fe](https://github.com/TechX/xora-eval-framework-fe) |
+| `xora-learning-loop` | [XBrainVN/xora-learning-loop](https://github.com/XBrainVN/xora-learning-loop) | [TechX/xora-learning-loop](https://github.com/TechX/xora-learning-loop) |
+| `xora-platform` | [XBrainVN/xora-platform](https://github.com/XBrainVN/xora-platform) | [TechX/xora-platform](https://github.com/TechX/xora-platform) |
+| `xora-platform-fe` | [XBrainVN/xora-platform-fe](https://github.com/XBrainVN/xora-platform-fe) | [TechX/xora-platform-fe](https://github.com/TechX/xora-platform-fe) |
+| `xora-resolve-be` | [XBrainVN/xora-resolve-be](https://github.com/XBrainVN/xora-resolve-be) | [TechX/xora-resolve-be](https://github.com/TechX/xora-resolve-be) |
+| `xora-resolve-agent` | [XBrainVN/xora-resolve-agent](https://github.com/XBrainVN/xora-resolve-agent) | [TechX/xora-resolve-agent](https://github.com/TechX/xora-resolve-agent) |
+
+Cả 7 cặp gọi chung controller [TechX/xora-contribution-controller](https://github.com/TechX/xora-contribution-controller).
 
 ## 5. Chạy lần đầu và kiểm tra
 

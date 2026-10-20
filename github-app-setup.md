@@ -164,6 +164,8 @@ git ls-remote b refs/heads/main
 
 Clone này lấy đầy đủ lịch sử tổ tiên của main, không chỉ chép file; author và SHA cũ giữ nguyên. A là repo độc lập, không cần thuộc fork network. Chỉ push main, không dùng `--mirror` để đẩy mọi ref hoặc xóa ref ngoài ý muốn. Git LFS/submodule nếu có cần chuẩn bị thêm quyền và dữ liệu tương ứng; các lệnh trên chỉ bootstrap Git history.
 
+Credential bootstrap cần được phép ghi cả workflow nếu B đã có `.github/workflows/`. Trước lần push đầu tiên, kiểm tra các workflow hiện có ở B theo mục 7: workflow được sao sang A có thể chạy ngay tại A khi được push bằng App/PAT.
+
 Sau khi main hai bên trùng SHA: tạo controller, cài Apps/secrets, triển khai controller, thêm notifier tại B; controller đưa notifier về A. Chỉ cho developer bắt đầu feature branch sau khi bootstrap hoàn tất. Nếu B/main tiếp tục tiến lên trong lúc setup, reconcile sẽ đọc B/main mới nhất. Controller hiện tại yêu cầu A/main tồn tại, chưa tự bootstrap repo A trống.
 
 ## 3. Tạo và cài ba GitHub App
@@ -211,6 +213,8 @@ Key vận chuyển code chỉ nằm tại controller. A và B chỉ giữ key di
 
 Quyền Actions write áp dụng toàn repo controller, không bị GitHub giới hạn vào một workflow. Người được sửa/chạy workflow có secret tại A hoặc B có thể sử dụng credential này để thao tác Actions và đọc log/artifact controller trong phạm vi quyền App. Chỉ giữ các workflow tin cậy ở controller, không cung cấp workflow nhận code/lệnh tùy ý qua input, không ghi thông tin nội bộ B vào log có thể đọc qua credential này. Cách setup này chấp nhận secret dispatch tại A; không tuyên bố A có 0 secrets.
 
+Cụ thể, developer có write tại A và được chạy Actions có thể tạo workflow trên branch của họ để dùng secret dispatch, dù không xem được giá trị trực tiếp trong Settings. Actions write cho phép cả cancel/disable workflow, đọc log và tiêu thụ minutes của controller. Đây là quyền đã chấp nhận cho mô hình này; key dispatch không phải ranh giới bảo vệ controller khỏi việc lạm dụng Actions bởi developer A.
+
 ## 5. Triển khai controller
 
 Copy toàn bộ nội dung [templates/controller](templates/controller) vào repo controller mới, private và rỗng. Ví dụ, thay `DOCS_REPO_URL` bằng URL clone repo tài liệu đang đọc, và thay `B_OWNER/CONTROLLER_REPO`:
@@ -242,7 +246,7 @@ tests/*.test.mjs
 | [scripts/pr-bridge-reviews.mjs](templates/controller/scripts/pr-bridge-reviews.mjs) | Đưa review đã submit và nội dung findings của B về A |
 | [scripts/pr-bridge-comments.mjs](templates/controller/scripts/pr-bridge-comments.mjs) | Sao chép comment hai chiều, ghi nguồn và chống lặp |
 | [.github/workflows/controller.yml](templates/controller/.github/workflows/controller.yml) | Chạy kiểm tra và cấp token cho job reconcile |
-| [tests](templates/controller/tests) | 26 test policy, boundary, review, comment, metadata, Git recovery/lease và guard từ chối acceptance khi commit gốc bị viết lại; không cần token hay gọi GitHub |
+| [tests](templates/controller/tests) | 43 test: policy/boundary, nội dung review/comment, Git recovery/lease thật và orchestration với Git/API giả lập; không cần token hay gọi GitHub |
 
 Trong `scripts/pr-bridge.mjs`, thay các placeholder ở năm hằng đầu file:
 
@@ -266,11 +270,11 @@ Giữ nguyên tên variable/secret và biến môi trường; nhập Client ID/P
 
 Workflow controller mẫu đã cấu hình:
 
-1. Trigger `workflow_dispatch` nhận yêu cầu từ notifier A/B; `schedule` ở phút 7, 22, 37, 52 chỉ làm dự phòng nếu một sự kiện bị bỏ lỡ. Không dùng lịch làm đường chạy chính.
+1. Trigger `workflow_dispatch` nhận yêu cầu từ notifier A/B; lịch mỗi 6 giờ, phút 17 UTC, chỉ làm dự phòng nếu một sự kiện bị bỏ lỡ. Không dùng lịch làm đường chạy chính.
 2. Inputs tùy chọn `source_repo`, `source_sha`, `source_run_id`, `source_event`, `source_pr` để truy vết notifier; không dùng SHA/input làm lệnh merge hoặc thay cho trạng thái PR và B/main thực tế.
-3. Job kiểm tra chạy trước reconcile. Chạy kiểm tra khi code controller thay đổi qua push/PR, nhưng không cấp key và không reconcile từ các event đó.
+3. Job `policy` chạy riêng khi code controller thay đổi qua push/PR, không cấp key và không reconcile từ các event đó. Với schedule/dispatch, chạy tests ở bước đầu trong chính job `reconcile`, trước khi tạo token App; không cần thêm một runner chỉ để chạy policy.
 4. Job reconcile chỉ chạy khi `BRIDGE_ENABLED == 'true'`, repo đúng controller, ref `refs/heads/main`, event là schedule hoặc workflow_dispatch.
-5. Checkout main tin cậy của controller với `persist-credentials: false`; `GITHUB_TOKEN` chỉ Contents read. Serialize các lượt reconcile, không hủy lượt đang chạy.
+5. Checkout đúng `${{ github.sha }}` của event trên main tin cậy, với `persist-credentials: false`; tests và reconcile dùng cùng revision. `GITHUB_TOKEN` chỉ Contents read. Serialize các lượt reconcile, không hủy lượt đang chạy. Job policy dùng nhóm concurrency khác, không thay mất reconcile đang chờ.
 6. Dùng `actions/create-github-app-token`, pin action bằng commit SHA đã kiểm tra. Token App A chỉ repo A với Contents/Pull requests/Workflows write; token App B chỉ repo B với Contents/Pull requests write.
 7. Truyền token App A qua `SOURCE_TOKEN`, App B qua `BRIDGE_APP_TOKEN`, rồi chạy `node scripts/pr-bridge.mjs`.
 8. Inputs notifier được truyền thành `TRIGGER_SOURCE_REPO`, `TRIGGER_SOURCE_SHA`, `TRIGGER_SOURCE_RUN_ID`, `TRIGGER_SOURCE_EVENT`, `TRIGGER_SOURCE_PR`; script xác thực đúng A/B, định dạng và loại sự kiện.
@@ -280,6 +284,9 @@ Các guard của script phải còn hoạt động:
 - Kiểm tra mỗi installation token chỉ thấy đúng một repo private đã cấu hình.
 - Chỉ ghi branch `incoming/a-pr-<number>` ở B; tại A ghi `main` và `recovery/a-main-<SHA>`. Không force-push hoặc gọi merge endpoint ở B.
 - Kiểm tra repo, base, head SHA và bot tạo PR trước khi cập nhật cặp PR. Không ghép cặp chỉ vì một comment có marker giống bot.
+- Ghép cặp bằng bot tạo PR, repo và branch `incoming/a-pr-<number>`, không phụ thuộc marker có thể bị xóa trong body. Sau khi tạo, giữ nguyên title/body mà maintainer B chỉnh sửa.
+- B thêm commit trên incoming thì giữ commit đó nếu vẫn chứa head A. Nếu hai branch phân kỳ, báo `incoming-diverged` và không force-push B; các cặp khác vẫn được xử lý.
+- A closed không đồng nghĩa B rejected. Bot báo `source-closed`, thông báo tại B và giữ quyền close/reopen/merge PR B cho maintainer B.
 - Luôn đối chiếu A/main với B/main thực tế. Nếu A lệch, lưu lịch sử cũ và thay main trong một atomic push; lease ràng buộc SHA đã đọc. B thay đổi trong lúc fetch hoặc A thay đổi trước push thì dừng lượt đó, không dùng SHA từ sự kiện để ghi đè mù.
 - Không checkout/chạy contribution, Git hooks hoặc dependencies của contribution trong job có key.
 - Sao chép nội dung trao đổi như dữ liệu; giữ nguồn/tác giả, không thực thi comment như lệnh và không sao chép bot qua lại.
@@ -292,7 +299,7 @@ node --check scripts/pr-bridge.mjs
 node --test tests/*.test.mjs
 ```
 
-`Select-String` phải không trả về dòng nào; tests phải pass 19/19. Script dùng Node.js built-in modules, không có bước `npm install`.
+`Select-String` phải không trả về dòng nào; tests phải pass 43/43. Script dùng Node.js built-in modules, không có bước `npm install`. Các test orchestration không thay thế nghiệm thu API/quyền thật trên GitHub.
 
 ```powershell
 git add .github scripts tests .gitignore
@@ -303,6 +310,8 @@ git push -u origin main
 Kiểm tra job policy thành công rồi bật `BRIDGE_ENABLED=true`. Maintainer B chạy **Actions → Isolated bridge - B decides → Run workflow → main** lần đầu, kiểm tra đúng repo/token scope và SHA hai main.
 
 ## 6. Setup workflow tại B và cách dùng A
+
+A và B dùng **cùng một file notifier** trong [templates/B](templates/B/.github/workflows/notify-controller.yml). Tên thư mục chỉ nơi cài đầu tiên; sau khi B merge, bot đưa đúng file đó về A. Không cần một bản YAML riêng cho A. Secrets/variables dispatch vẫn phải cấu hình riêng ở cả hai repo.
 
 Tại B, copy [workflow notifier hoàn chỉnh](templates/B/.github/workflows/notify-controller.yml) vào `.github/workflows/notify-controller.yml`, sau khi controller đã chạy thành công bằng dispatch. Từ thư mục cha chứa `bridge-docs` và `controller`:
 
@@ -337,7 +346,9 @@ Các trigger trong cùng một file notifier:
 | `pull_request_review_comment`: created, edited | Comment theo dòng và reply gọi controller |
 | `push` main | Chỉ B gọi controller; push đồng bộ A/main bị skip |
 
-PR/review/comment có sender là Bot bị skip: bot chuyển commit sang B, sao chép comment hoặc đóng PR A không tạo chuỗi dispatch lặp. Không đồng bộ việc xóa comment hoặc reaction. Hai lượt gần nhau có thể được gộp trong hàng đợi; mỗi lượt controller đọc lại toàn bộ trạng thái hiện tại.
+PR/review/comment có sender là Bot bị skip: bot chuyển commit sang B, sao chép comment hoặc đóng PR A không tạo chuỗi dispatch lặp. Không đồng bộ việc xóa comment hoặc reaction. Hai lượt gần nhau có thể được gộp trong hàng đợi; mỗi lượt đọc lại main và các PR liên quan.
+
+Luồng hội thoại hai chiều là **issue comments trong tab Conversation**. Review/inline findings chỉ được sao chép từ B về A. Developer A trả lời findings bằng Conversation; review/inline comment viết tại A không được chuyển sang B dù event vẫn gọi controller.
 
 Push B/main, gồm merge PR, sẽ kích hoạt chuỗi này mà không phải chờ lịch. Thời gian hoàn tất phụ thuộc hàng đợi Actions. Push do `GITHUB_TOKEN` tạo không kích hoạt các workflow push tiếp theo; automation ghi B/main cần App token phù hợp hoặc gọi dispatch riêng. [Quy tắc trigger workflow](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
 
@@ -381,6 +392,18 @@ Private repo thuộc organization cần gói hỗ trợ branch protection, như 
 
 Nếu dùng ruleset thay cho classic protection, kiểm tra phạm vi từng rule và quyền bypass của App A. Không cấp bypass rộng cho App B. CI contribution phải chạy tách khỏi job có key vận chuyển code; bảo vệ quyền sửa workflow/secret tại B và controller.
 
+### CI của code contribution và workflow được sao chép
+
+PR incoming nằm **ngay trong repo B**, không có cơ chế hạn chế secrets như PR từ fork. Job CI tại B chạy build/test/script do A thay đổi phải dùng `permissions` tối thiểu, không truyền secret hoặc token có quyền ghi vào code đó, kể cả key dispatch. Chặn sửa `.github/workflows/` không ngăn developer sửa script mà workflow sẵn có gọi tới. Nếu cần bước có credential, tách sang bước triển khai chỉ chạy code đã được B chấp nhận và có kiểm soát phê duyệt phù hợp.
+
+Toàn bộ workflow B cũng đi sang A khi reconcile main. Workflow deploy/CD chỉ dành cho B cần guard ở từng job nhạy cảm:
+
+```yaml
+if: github.repository == 'B_OWNER/B_REPO'
+```
+
+Áp dụng cả trước bootstrap để tránh chạy deploy/CD nhầm tại A. Notifier chung là ngoại lệ chủ động cho phép A và B. Bộ template không tự sửa hoặc vô hiệu hóa workflow của ứng dụng được đồng bộ. [GitHub: bảo vệ code không tin cậy trong Actions](https://docs.github.com/en/actions/reference/security/secure-use).
+
 ## 8. Trigger và kết quả cần kiểm tra
 
 | Thao tác | Khi controller xử lý | Kết quả mong đợi |
@@ -395,6 +418,10 @@ Nếu dùng ruleset thay cho classic protection, kiểm tra phạm vi từng rul
 | Kết quả merge chưa có trong snapshot B/main | Lượt reconcile | `merge-result-not-in-main`; không đóng PR A; chạy lại hoặc kiểm tra B đã viết lại main |
 | B đóng PR không merge | Notifier B tự dispatch theo PR closed | Cặp PR bị rejected, A đóng không merge; contribution không vào main |
 | B/main có commit khác | Push B/main tự dispatch | A/main nhận đúng SHA B/main thực tế |
+| B Update branch hoặc thêm commit trên incoming | Notifier B | Không đẩy lùi branch B; nếu đã chứa A head thì tiếp tục chờ B |
+| A amend/rebase hoặc hai feature branch phân kỳ | Notifier | `incoming-diverged`; giữ B, cần phối hợp với maintainer hoặc PR A mới từ main |
+| A closed / B reopen sau rejection | Notifier | `source-closed` nếu A còn closed; bot không đóng lại PR B; reopen A nếu muốn sửa tiếp |
+| Một cặp PR lỗi API/Git hoặc feedback quá dài | Controller | Ghi lỗi riêng, tiếp tục các cặp còn lại, cuối run báo Fail để cần xử lý |
 | A/main lệch khỏi lịch sử B | Lượt reconcile | Tạo branch recovery rồi thay A/main bằng atomic push và force-with-lease |
 | Chạy lại sau khi xử lý | Lượt reconcile | Không tạo thêm PR hoặc lặp comment đã sao chép |
 
@@ -430,10 +457,18 @@ Không xóa branch đóng góp khi thay A/main. Local main có commit ngoài lu�
 ### Phạm vi đồng bộ và cách đọc CI
 
 - PR tạo trực tiếp tại B không tạo PR tương ứng tại A. Khi PR đó merge vào B/main, A/main vẫn nhận code qua reconcile.
-- PR contribution đi A → B; review và comment của cặp PR đi hai chiều. B/main → A/main là luồng riêng.
+- PR contribution đi A → B; review/inline đi B → A, Conversation comment đi hai chiều. B/main → A/main là luồng riêng.
 - Check CI của contribution chỉ kiểm tra code. Notifier Success chỉ xác nhận đã gửi yêu cầu. Phải mở run ở **repo controller**, xem job `reconcile`, summary SHA trước/sau và trạng thái cặp PR.
 - `pending` nghĩa là chờ quyết định B; `rejected` là B đóng không merge; `blocked-workflow-change` là contribution sửa workflow. Một run controller Success có thể chứa những trạng thái này và không mở PR mới.
 - GitHub Actions xếp hàng; nhiều sự kiện gần nhau có thể thay run đang chờ. Đây không phải cam kết chạy tức thời. Lượt còn lại đọc lại trạng thái hiện tại; lịch là dự phòng.
+
+### Phạm vi quét và chi phí vận hành
+
+Mỗi lượt xét PR đang mở và PR đóng được cập nhật trong 7 ngày gần nhất. PR cũ hơn vẫn được xử lý khi có event trực tiếp trỏ đến PR đó; cặp B đang mở và cặp của A đang mở không bị bỏ vì tuổi PR. Khi cần kiểm tra một cặp cũ bằng Run workflow, nhập đủ metadata PR/repo/event/SHA/run ID hợp lệ để chỉ rõ cặp; hoặc tạo một Conversation comment bằng tài khoản người dùng. Fallback không quét toàn bộ lịch sử đã đóng từ trước.
+
+Main sync chạy trước xử lý PR. Lỗi riêng của một cặp không cản cặp khác; run vẫn Fail và status PR ghi lỗi nếu API còn cho phép. Feedback quá dài chưa tự chia nhỏ: maintainer cần chia review/comment. Status accepted giữ merge commit làm mốc cố định, không bị sửa theo mọi lần B/main tiến lên.
+
+Lịch dự phòng hiện có 4 lượt/ngày, 1 runner mỗi lượt; event vẫn chạy ngay khi GitHub Actions xếp lịch được. Nếu mỗi lượt dưới một phút, lịch riêng tương đương khoảng 120 phút cho tháng 30 ngày, chưa tính event và thời gian dài hơn. GitHub làm tròn minutes theo job; quota được chia sẻ với workflow khác trong org. Theo dõi usage và budget thay vì coi tiết kiệm seat là miễn phí toàn bộ Actions. [Cách tính thời gian job](https://docs.github.com/en/actions/how-tos/monitor-workflows/view-job-execution-time), [quota Actions](https://docs.github.com/en/billing/concepts/product-billing/github-actions).
 
 ### Hướng dẫn trong body PR để giữ nguyên identity
 

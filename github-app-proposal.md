@@ -67,7 +67,7 @@ Mỗi lượt chạy, Actions dùng private key trong secrets để tạo instal
 
 Hướng dẫn triển khai trung lập nằm trong [Setup GitHub App cho A và B](github-app-setup.md). A và B là hai repo code; **controller là repo private thứ ba**, do B quản lý. Không chuyển key vận chuyển code vào A hoặc job chạy contribution để giảm số repo.
 
-Bộ mã trung lập đã có ngay trong repo docs: [controller và tests](templates/controller), cùng [workflow notifier dùng cho A/B](templates/B/.github/workflows/notify-controller.yml). [File setup](github-app-setup.md) chỉ rõ nơi copy và thay placeholder. Controller hiện tại là `96fe79080f1eacf45de82bcb72119923df92c260`, có 26 tests; notifier được đưa vào B/main tại `1985f3afc6992aa04fc3665465e32f10a97f0e69` rồi đồng bộ về A. Không công bố private key.
+Bộ mã trung lập đã có ngay trong repo docs: [controller và tests](templates/controller), cùng [workflow notifier dùng cho A/B](templates/B/.github/workflows/notify-controller.yml). [File setup](github-app-setup.md) chỉ rõ nơi copy và thay placeholder. Bộ mã sau review có 43 tests; SHA triển khai và kết quả test thật được ghi ở mục kiểm chứng tương ứng. Notifier được đưa vào B/main tại `1985f3afc6992aa04fc3665465e32f10a97f0e69` rồi đồng bộ về A. Không công bố private key.
 
 ### 2.1. Tạo hai App vận chuyển code và giới hạn quyền
 
@@ -124,13 +124,13 @@ Các file đã triển khai trong controller:
 - [`scripts/pr-bridge-policy.mjs`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/blob/main/scripts/pr-bridge-policy.mjs): giới hạn API mutation, ref push và xử lý trạng thái.
 - [`scripts/pr-bridge-reviews.mjs`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/blob/main/scripts/pr-bridge-reviews.mjs): sao chép review đã submit và comment theo dòng của B về A.
 - [`scripts/pr-bridge-comments.mjs`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/blob/main/scripts/pr-bridge-comments.mjs): sao chép comment hội thoại hai chiều, giữ nguồn và chống vòng lặp.
-- [`tests`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/tree/main/tests): 26 test gồm policy/boundary, review, hội thoại, metadata sự kiện, Git recovery/lease và guard không chấp nhận commit gốc bị viết lại.
+- [`tests`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/tree/main/tests): 43 test gồm policy/boundary, review, hội thoại, metadata, Git recovery/lease và orchestration. Các test orchestration dùng Git/API giả lập; bằng chứng chạy GitHub được ghi riêng.
 
 Khi **B/main có push mới**, gồm merge PR và commit trực tiếp, workflow tại B tự dispatch controller. Không cần maintainer bấm Run workflow hoặc đợi lịch để đồng bộ B/main về A/main. GitHub nhận sự kiện ngay; thời điểm job bắt đầu và hoàn tất vẫn phụ thuộc hàng đợi Actions.
 
-Mở PR, thêm commit, sửa trạng thái PR, review hoặc comment tại A/B đều có notifier theo sự kiện. Lịch **7, 22, 37, 52 mỗi giờ** chỉ là dự phòng, không phải đường chạy chính. Khi cần phục hồi, maintainer B vẫn có thể Run workflow tại controller. Trước bản cập nhật này API chưa ghi nhận run schedule, nên các lượt test mới kiểm chứng bằng chuỗi notifier → App dispatch → controller, không dùng lịch hoặc thao tác dispatch tay làm bằng chứng tự động.
+Mở PR, thêm commit, sửa trạng thái PR, review hoặc comment tại A/B đều có notifier theo sự kiện. Lịch **mỗi 6 giờ, phút 17 UTC** chỉ là dự phòng, không phải đường chạy chính. Maintainer B có thể Run workflow khi cần phục hồi. Các lượt test tự động phải có chuỗi notifier → App dispatch → controller; run tay không chứng minh trigger tự động.
 
-Job `policy` kiểm tra code trước; job `reconcile` chỉ chạy trên main của đúng repo controller, khi bật `BRIDGE_ENABLED` và sự kiện là schedule/dispatch. Các lượt reconcile chạy tuần tự. `GITHUB_TOKEN` chỉ có Contents read để checkout controller; hai App tạo installation token giới hạn đúng một repo trong mỗi lượt chạy. Không lưu PAT cá nhân vào Actions.
+Job `policy` chạy trên push/PR của controller. Với schedule/dispatch, job `reconcile` tự chạy tests trước khi tạo token, trên đúng SHA controller được checkout; không dùng thêm runner policy. Reconcile chỉ chạy trên main của đúng controller khi bật `BRIDGE_ENABLED`, các lượt chạy tuần tự. Policy có nhóm concurrency riêng. `GITHUB_TOKEN` chỉ Contents read; hai App tạo token giới hạn đúng một repo mỗi lượt. Không lưu PAT cá nhân vào Actions.
 
 Job có key chỉ checkout main của controller do B quản lý. PR A được đọc như dữ liệu và Git objects, không checkout/chạy code, hook hoặc dependency từ contribution. CI chạy riêng không nhận key bridge; các action được pin bằng commit SHA.
 
@@ -175,7 +175,7 @@ Push do `GITHUB_TOKEN` tạo thường không kích hoạt workflow tiếp theo.
 | Tài khoản `vinh-xbrainn` đọc B và controller | Cả hai nhận HTTP 404 |
 | Xin token App B với Workflows write | GitHub từ chối HTTP 422 |
 | Repo A chỉ có credential dispatch | 1 secret dispatch; không có key vận chuyển code |
-| Controller không cho gọi merge endpoint, ghi ref ngoài phạm vi hoặc push B/main | 7 test policy/boundary pass; đây là guard trong code |
+| Controller không cho gọi merge endpoint, đóng/sửa PR B, ghi ref ngoài phạm vi hoặc push B/main | Test policy/boundary kiểm tra các mutation bị cấm; đây là guard trong code |
 
 Controller chỉ push `incoming/a-pr-<số PR A>` tại B; tại A chỉ cập nhật `main` và `recovery/a-main-<SHA>`. Nó kiểm tra source SHA, base main, repo và tác giả App của PR ghép cặp trước khi cập nhật. Khi A lệch, bot lưu SHA cũ và thay main bằng B/main trong cùng atomic push, dùng force-with-lease. Nếu A đổi đồng thời, cả thao tác bị từ chối. Không force-push B/main hoặc feature branch.
 
@@ -217,7 +217,7 @@ App A đã được cài riêng. Đề xuất ruleset `Restrict updates` cho mai
 - Bản sao ghi người viết gốc, link nguồn và thời gian; nội dung được đặt trong khối văn bản để không kích hoạt ảnh, mention hoặc lệnh Markdown. Comment không có quyền approve hay merge. Quyết định review lấy từ API review của B, quyết định nhận code lấy từ B/main.
 - Chỉnh sửa comment nguồn được cập nhật ở lượt sau; xóa comment nguồn chưa xóa bản sao. Không đồng bộ emoji reaction, trạng thái Resolve conversation, file đính kèm hoặc log CI. Reply trong review được chuyển theo review tương ứng; hội thoại từ A nên viết tại tab Conversation.
 - Nội dung vượt giới hạn một comment làm run báo lỗi để maintainer tách nội dung, không âm thầm cắt bớt findings. Review giữ SHA và diff gốc; vị trí cũ được đánh dấu `outdated`. Approval của bản cũ không được diễn giải là approval của head mới.
-- Nếu B từ chối và đóng PR không merge, bot đóng PR A với trạng thái rejected; không tự mở lại cặp đó. Nếu A có commit mới sau lúc B merge, controller không đánh dấu những commit chưa được B nhận là hoàn tất; cần PR mới cho phần còn lại.
+- Nếu B từ chối và đóng PR không merge, bot đóng PR A với trạng thái rejected; không tự tạo lại cặp đó. B có thể reopen PR B; nếu A còn closed, bot báo `source-closed` và giữ B mở, không đảo quyết định của B. Nếu A có commit mới sau lúc B merge, controller không coi các commit chưa được nhận là hoàn tất.
 - Nếu B nhận hotfix trong khi A còn làm feature, bot vẫn đồng bộ B/main về A/main. Developer pull A/main rồi merge main vào feature, tự xử lý conflict và push lại qua cùng PR. Bot không tự giải quyết conflict hoặc force-push feature branch; A/main vẫn phản chiếu B/main theo chính sách mới.
 
 Sau khi bật policy trên gói hỗ trợ, cần test thực tế: App B mở PR được nhưng không push/merge/force-push/xóa main; member A không push/merge main; maintainer B vẫn merge được và App A đồng bộ được. Test thêm stale approval, conflict, main lệch, token bị thu hồi và retry. **Các kiểm tra từ chối do branch protection này chưa chạy trong lab Free.**
@@ -525,3 +525,23 @@ Lượt test ngày 20/10/2026 dùng cặp [A #7](https://github.com/Vihnnnn/bot-
 [Run tiếp theo 39369234420](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39369234420) cũng Success. API xác nhận chỉ có một PR B ghép với A #7, vẫn đóng; chỉ có một bản sao comment lý do. Commit bị từ chối không nằm trong lịch sử hai main; file `rejected-contribution.txt` không tồn tại trên main ở cả hai repo. Developer đã pull A/main, local vẫn cùng SHA và không có file này.
 
 Lượt test A #7 / B #19 ở trên dùng maintainer dispatch và là evidence lịch sử. Bản hiện tại đã nhận sự kiện PR closed tại B: notifier tự gọi controller mà không cần push main. Request changes giữ PR mở để sửa tiếp; rejected kết thúc cặp PR, không tự tạo lại. Đề xuất khác cần branch và PR mới từ A/main đã cập nhật.
+
+### Kiểm chứng bản sửa sau review — 20/10/2026
+
+Controller triển khai tại [`d2e6782`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/commit/d2e67827ad37c1226c00881c726ced89da81a272). Bộ test có **43/43 pass**, gồm 13 test orchestration gọi trực tiếp controller với Git/API giả lập. Các lượt GitHub bên dưới dùng notifier theo sự kiện; không dispatch controller bằng tay.
+
+| Tình huống chạy thật | Kết quả và bằng chứng |
+|---|---|
+| Mở hai PR tại A | Bot tạo đúng một PR B cho mỗi PR: [A #15](https://github.com/Vihnnnn/bot-bridge-lab/pull/15) → [B #29](https://github.com/TF4-Phase3-TechX/bot-bridge-lab/pull/29), [A #16](https://github.com/Vihnnnn/bot-bridge-lab/pull/16) → [B #28](https://github.com/TF4-Phase3-TechX/bot-bridge-lab/pull/28). |
+| B/main có commit riêng, rồi B Update branch | [B #30](https://github.com/TF4-Phase3-TechX/bot-bridge-lab/pull/30) bỏ workflow bridge cũ đã bị disable. A/main tự đồng bộ. B #29 được Update branch lên `2925604`; controller giữ commit B bổ sung, không đẩy branch B lùi về head A. [Run 39385522164](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39385522164) Success. |
+| A viết lại lịch sử feature branch | A #16 đổi head từ `57ad242` sang `25451da`. Bot giữ B #28 ở `57ad242`, báo `incoming-diverged` tại A và tiếp tục xử lý A #15 / B #29 trong cùng run. Không force-push branch B. |
+| B đóng rồi mở lại PR | B #29 đóng làm A #15 đóng theo. [Run đóng 39385702322](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39385702322) Success. Khi B mở lại, A còn closed: bot báo `source-closed`, giữ B mở. [Run mở lại 39385857216](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39385857216) Success. Developer sau đó mở lại PR A để tiếp tục. |
+| B approve và Create a merge commit | B #29 merge; [run 39385980047](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39385980047) Success, A/main tự đồng bộ đúng `701353e55dcebb402151da2c28d875f9f5a3873a`, A #15 đóng và nhận [thông báo accepted](https://github.com/Vihnnnn/bot-bridge-lab/pull/15#issuecomment-6285521759). PR A #16 đang lệch lịch sử không ngăn cặp này hoàn tất. |
+
+Commit đóng góp `93d4313e5d467820d1260438eaca7050b49ca814` được giữ nguyên trong lịch sử B/main và A/main. API commit ở hai repo trả về cùng SHA, author và committer; tài khoản author là `vinh-xbrainn`. Quy tắc dùng **Create a merge commit** vẫn là hướng dẫn trong PR body, không thay đổi cấu hình merge của B.
+
+Run xử lý merge nói trên được sự kiện reopen A đưa vào hàng đợi, sau đó đọc B/main thực tế khi chạy. Các sự kiện review/merge/push B vẫn tạo yêu cầu riêng; một số run pending bị thay thế bởi yêu cầu mới trong cùng concurrency group. Run đang chạy không bị hủy. Đây là cơ chế gom sự kiện để reconcile trạng thái hiện tại, không phải mỗi sự kiện bắt buộc hoàn tất một run riêng.
+
+Kết thúc test, maintainer đóng B #28 để từ chối contribution đã viết lại lịch sử; A #16 tự đóng với `merged: false`. API xác nhận không có PR B trùng cặp, commit bị từ chối không vào main, hai main bằng nhau và workflow bridge cũ đã được bỏ ở cả hai repo. Notifier hiện tại vẫn có tại A và B.
+
+Các thay đổi còn lại được kiểm tra bằng test: ghép cặp theo bot/repo/branch thay vì marker trong body; giữ title/body do B chỉnh; giữ nguyên dòng code trong review/comment; cô lập lỗi từng cặp; không cập nhật lại comment accepted vì main có commit không liên quan. Chưa có lượt GitHub riêng cho từng nhánh kiểm thử này. Không chạy thêm squash/rebase trong lượt nghiệm thu này.

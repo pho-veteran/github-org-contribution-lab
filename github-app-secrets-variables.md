@@ -96,7 +96,7 @@ App Sync tạo tại TechX phải cho phép **Any account** để owner XBrainVN
 | Client ID và PEM | Cùng thuộc đúng App, không lẫn Sync/Transport/Dispatch |
 | Actions controller → policy | Success; job này kiểm tra code, **chưa chứng minh secrets hợp lệ** |
 | Khi đã bootstrap và cấu hình đủ, bật bridge rồi Run workflow | Đủ 7 job reconcile thành công; A/main bằng B/main |
-| Sự kiện PR tại A hoặc push main tại B | Notifier gọi controller, controller xử lý đúng cặp; không chỉ kiểm tra notifier Success |
+| Sự kiện PR tại A hoặc push nhánh có notifier mới tại B | Notifier gọi controller, controller xử lý đúng cặp; không chỉ kiểm tra notifier Success |
 
 GitHub không cho đọc lại giá trị secret sau khi lưu. Nếu nhập nhầm, cập nhật lại bằng PEM đúng. Không cần tự tạo hoặc lưu installation token dài hạn; workflow tự tạo token bằng Client ID + PEM và thu hồi khi kết thúc.
 

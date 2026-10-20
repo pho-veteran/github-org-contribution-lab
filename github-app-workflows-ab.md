@@ -1,8 +1,8 @@
 # Setup workflow A/B
 
 Nâng cấp controller để đồng bộ mọi nhánh B → A:
-[file cần đổi, workflow giữ nguyên và cách nghiệm thu](all-branch-reconciliation.md).
-Push riêng lên nhánh ngoài main vẫn chờ lượt reconcile tiếp theo nếu giữ notifier dưới đây.
+[file cần đổi, notifier mọi nhánh và cách nghiệm thu](all-branch-reconciliation.md).
+Push lên mọi nhánh B có notifier mới tự gọi controller qua CI; schedule chỉ là dự phòng.
 
 **A: XBrainVN. B: TechX — source of truth. Controller: `TechX/xora-contribution-controller`.**
 
@@ -10,7 +10,7 @@ Push riêng lên nhánh ngoài main vẫn chờ lượt reconcile tiếp theo n�
 
 | Repo | Pipeline build/test/deploy hiện có | Workflow mới |
 |---|---|---|
-| B — `TechX/<repo>` | Giữ nguyên, tiếp tục chạy | Thêm `notify-controller.yml` để gọi controller khi review/comment hoặc B/main thay đổi |
+| B — `TechX/<repo>` | Giữ nguyên, tiếp tục chạy | Thêm `notify-controller.yml` để gọi controller khi review/comment hoặc bất kỳ nhánh B thay đổi |
 | A — `XBrainVN/<repo>` | Disable từng workflow tại A | Chỉ bật `notify-controller.yml` để gọi controller khi PR/commit/comment thay đổi |
 
 Tại A: **Actions → chọn pipeline cũ → `…` → Disable workflow**. Nếu đã tắt rồi thì không cần làm lại. **Giữ Actions của repo được bật.**
@@ -35,8 +35,9 @@ Làm tại từng repo `TechX/<repo>`:
 1. Giữ nguyên các pipeline build/test/deploy đang dùng.
 2. Tạo branch, thêm file **`.github/workflows/notify-controller.yml`** bằng code ở mục 4.
 3. Mở PR để maintainer B review và merge.
+4. Đưa cùng notifier mới vào các nhánh B đang hoạt động; chỉ sửa main không thay workflow trên nhánh cũ. Nhánh mới từ baseline đã cập nhật sẽ kế thừa notifier. Xem [rollout và kiểm chứng](all-branch-reconciliation.md).
 
-Kết quả: merge PR hoặc push lên B/main → notifier B gọi controller → controller đồng bộ B/main về A/main. Pipeline B vẫn chạy theo trigger cũ; notifier là workflow riêng, không cần thêm job vào pipeline đang có.
+Kết quả: push lên bất kỳ nhánh B có notifier mới → notifier B gọi controller → controller reconcile mọi nhánh B về A. Pipeline B vẫn chạy theo trigger cũ; notifier là workflow riêng, không cần thêm job vào pipeline đang có.
 
 ## 4. Code workflow dùng ở cả hai bên
 
@@ -51,7 +52,7 @@ Thay **mọi `REPO_NAME`** trong YAML bằng tên repo của cặp đang setup, 
 name: Notify contribution bridge
 on:
   push:
-    branches: [main]
+    branches: ['**']
   pull_request_target:
     branches: [main]
     types: [opened, synchronize, reopened, closed, ready_for_review, edited]
@@ -65,7 +66,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: notify-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.issue.number || 'main' }}
+  group: notify-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.issue.number || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -73,7 +74,7 @@ jobs:
     if: >-
       (github.repository == 'XBrainVN/REPO_NAME' || github.repository == 'TechX/REPO_NAME') &&
       (
-        (github.event_name == 'push' && github.repository == 'TechX/REPO_NAME' && github.ref == 'refs/heads/main') ||
+        (github.event_name == 'push' && github.repository == 'TechX/REPO_NAME' && startsWith(github.ref, 'refs/heads/')) ||
         (github.event.sender.type == 'User' &&
           (
             (github.event_name == 'issue_comment' && github.event.issue.pull_request) ||
@@ -164,7 +165,7 @@ Khi controller đã được cấu hình và bật, cả 7 PR thêm notifier t�
 3. Kiểm tra tại A: notifier enabled, các pipeline ứng dụng vẫn disabled.
 4. Thử mở PR A → thêm commit → B nhận PR/commit → B **Create a merge commit** → notifier B tự chạy → A/main cập nhật → PR A đóng.
 
-Sau lần khởi tạo, **không cần bấm Run workflow mỗi khi B merge**. Push B/main tự kích hoạt notifier; thời điểm chạy phụ thuộc hàng đợi Actions.
+Sau lần khởi tạo, **không cần bấm Run workflow mỗi khi B merge**. Push mọi nhánh B có notifier mới tự kích hoạt notifier; thời điểm chạy phụ thuộc hàng đợi Actions.
 
 Reconcile không chờ build/deploy tại B hoàn tất. Nếu yêu cầu CI thành công trước khi nhận code thì đặt required checks trước merge. Nếu automation push B/main bằng `GITHUB_TOKEN`, cần dispatch riêng hoặc dùng App token phù hợp vì push đó không kích hoạt workflow tiếp theo.
 

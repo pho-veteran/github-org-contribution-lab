@@ -129,7 +129,7 @@ Các file đã triển khai trong controller:
 - [`bridge.config.json`](templates/controller/bridge.config.json) và [`scripts/bridge-config.mjs`](templates/controller/scripts/bridge-config.mjs): registry các cặp repo, chọn cặp và kiểm tra metadata trước khi tạo token.
 - [`tests`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/tree/main/tests): 50 test gồm registry 7 cặp, token scope, policy/boundary, review, hội thoại, metadata, Git recovery/lease và orchestration. Các test orchestration dùng Git/API giả lập; bằng chứng chạy GitHub được ghi riêng.
 
-Khi **B/main có push mới**, gồm merge PR và commit trực tiếp, workflow tại B tự dispatch controller. Không cần maintainer bấm Run workflow hoặc đợi lịch để đồng bộ B/main về A/main. GitHub nhận sự kiện ngay; thời điểm job bắt đầu và hoàn tất vẫn phụ thuộc hàng đợi Actions.
+Khi **bất kỳ nhánh B có notifier mới được push**, gồm merge PR và commit trực tiếp, workflow tại B tự dispatch controller. Không cần maintainer bấm Run workflow hoặc đợi lịch để reconcile các nhánh B về A. GitHub nhận sự kiện ngay; thời điểm job bắt đầu và hoàn tất vẫn phụ thuộc hàng đợi Actions.
 
 Mở PR, thêm commit, sửa trạng thái PR, review hoặc comment tại A/B đều có notifier theo sự kiện. Lịch **mỗi 6 giờ, phút 17 UTC** chỉ là dự phòng, không phải đường chạy chính. Maintainer B có thể Run workflow khi cần phục hồi. Các lượt test tự động phải có chuỗi notifier → App dispatch → controller; run tay không chứng minh trigger tự động.
 
@@ -149,7 +149,7 @@ Lab đã tắt workflow cũ `bridge-to-b.yml` tại A và B. Repo A hiện có *
 App dispatch đã cài: App ID `5390691`, installation `173256492`; API xác nhận chỉ thấy `TF4-Phase3-TechX/bot-bridge-controller`.
 
 ```text
-PR/review/comment tại A/B, hoặc B/main push
+PR/review/comment tại A/B, hoặc push mọi nhánh B có notifier mới
 → Repo nguồn: Notify controller on contribution events
 → Token App dispatch, chỉ repo controller / Actions write
 → POST controller.yml/dispatches, ref=main
@@ -157,7 +157,7 @@ PR/review/comment tại A/B, hoặc B/main push
 → Đọc B/main thực tế → đồng bộ A/main (recovery và thay main nếu lệch) → cập nhật PR A
 ```
 
-Notifier không checkout/chạy contribution, dependency hoặc Git hook. `GITHUB_TOKEN` có `permissions: {}`; endpoint controller, workflow và ref cố định. Metadata chỉ để truy vết; controller đọc lại PR và B/main thực tế. `pull_request_target` xử lý opened/synchronize/reopened/closed/ready_for_review/edited từ base main; `issue_comment`, `pull_request_review` và `pull_request_review_comment` xử lý trao đổi. Sự kiện PR/comment/review từ Bot bị skip; push main chỉ dispatch tại B, không dispatch tại A.
+Notifier không checkout/chạy contribution, dependency hoặc Git hook. `GITHUB_TOKEN` có `permissions: {}`; endpoint controller, workflow và ref cố định. Metadata chỉ để truy vết; controller đọc lại PR và B heads thực tế. `pull_request_target` xử lý opened/synchronize/reopened/closed/ready_for_review/edited từ base main; `issue_comment`, `pull_request_review` và `pull_request_review_comment` xử lý trao đổi. Sự kiện PR/comment/review từ Bot bị skip; push mọi nhánh chỉ dispatch tại B, không dispatch tại A. Cần cài notifier mới trên từng nhánh B đang hoạt động; xem [hướng dẫn nâng cấp](all-branch-reconciliation.md).
 
 `Actions: write` áp dụng toàn repo controller, **không phải quyền chỉ chạy một workflow**. Key dispatch đã được cho phép đặt tại A. Người sửa/chạy workflow dùng secret này có thể thao tác Actions và đọc log/artifact controller theo quyền App. Bảo vệ workflow A/B và controller, không thêm workflow controller thực thi code/lệnh tùy ý từ input. Notifier dùng `pull_request_target` nhưng tuyệt đối không checkout head hoặc chạy code contribution; key vận chuyển code không có tại A/B.
 

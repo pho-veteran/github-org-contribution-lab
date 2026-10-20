@@ -1,7 +1,7 @@
 name: Notify contribution bridge
 on:
   push:
-    branches: [main]
+    branches: ['**']
   pull_request_target:
     branches: [main]
     types: [opened, synchronize, reopened, closed, ready_for_review, edited]
@@ -15,7 +15,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: notify-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.issue.number || 'main' }}
+  group: notify-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.issue.number || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -23,7 +23,7 @@ jobs:
     if: >-
       (github.repository == 'A_OWNER/A_REPO' || github.repository == 'B_OWNER/B_REPO') &&
       (
-        (github.event_name == 'push' && github.repository == 'B_OWNER/B_REPO' && github.ref == 'refs/heads/main') ||
+        (github.event_name == 'push' && github.repository == 'B_OWNER/B_REPO' && startsWith(github.ref, 'refs/heads/')) ||
         (github.event.sender.type == 'User' &&
           (
             (github.event_name == 'issue_comment' && github.event.issue.pull_request) ||

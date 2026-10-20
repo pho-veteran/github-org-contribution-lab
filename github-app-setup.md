@@ -21,7 +21,7 @@ GitHub App cung cấp identity/quyền; **Actions chạy script controller**. C�
 ```mermaid
 flowchart LR
     A["A1…A7<br/>PR / commit mới / comment"] --> N["Notifier tại repo phát sinh event"]
-    B["B1…B7<br/>review / comment / push main"] --> N
+    B["B1…B7<br/>review / comment / push mọi nhánh"] --> N
     N --> D["App Dispatch<br/>Actions write trên controller"]
     D --> P["Controller: plan<br/>tra registry, chọn đúng cặp"]
     P --> R["Reconcile cặp i<br/>tests → lấy token → chạy script"]
@@ -162,7 +162,7 @@ Job `plan` phải tạo đủ các job `Reconcile <id>`, mỗi cặp thành côn
 
 ### 4.3. Cài notifier tại B, đồng bộ về A
 
-Với **XBrainVN → TechX**, xem [doc riêng: chỉ chạy CI dispatch tại A, giữ pipeline B và thêm reconcile khi B/main thay đổi](github-app-workflows-ab.md).
+Với **XBrainVN → TechX**, xem [doc riêng: chỉ chạy CI dispatch tại A, giữ pipeline B và thêm reconcile khi bất kỳ nhánh B thay đổi](github-app-workflows-ab.md).
 
 Đặt dispatch secret/variable ở **cả A và B** theo mục 2. Từ thư mục cha chứa `bridge-docs`, dùng thư mục làm việc riêng cho từng cặp:
 
@@ -185,7 +185,7 @@ git push -u origin setup/notify-controller
 
 Kiểm tra không còn placeholder. Maintainer B mở PR và merge; push B/main tự gọi controller. Bot đưa **cùng notifier** về A/main, không tạo commit cấu hình độc lập tại A. Kiểm tra file đã có trên A/main trước khi developer mở PR.
 
-Notifier không checkout/chạy code PR. PR/commit mới, review và comment từ người dùng tại A/B gọi controller; push main chỉ kích hoạt ở B. Event do bot sao chép comment/đóng PR bị bỏ qua để tránh lặp. Push bằng `GITHUB_TOKEN` không tự kích hoạt workflow push tiếp theo: automation ghi B/main phải dùng App token phù hợp hoặc dispatch riêng. [Quy tắc trigger](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
+Notifier không checkout/chạy code PR. PR/commit mới, review và comment từ người dùng tại A/B gọi controller; push mọi nhánh chỉ gọi controller ở B. Cài notifier mới trên mọi nhánh B đang hoạt động (push đọc workflow tại chính nhánh đó), xem [hướng dẫn nâng cấp](all-branch-reconciliation.md). Event do bot sao chép comment/đóng PR bị bỏ qua để tránh lặp. Push bằng `GITHUB_TOKEN` không tự kích hoạt workflow push tiếp theo: automation ghi B phải dùng App token phù hợp hoặc dispatch riêng. [Quy tắc trigger](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
 
 ## 5. Quyền và guard trước khi sử dụng
 

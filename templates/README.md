@@ -3,7 +3,7 @@
 | Thành phần | Cài ở đâu | Nội dung |
 |---|---|---|
 | [controller](controller) | Repo controller do B quản lý | Scripts, tests và workflow điều phối |
-| [notifier dùng chung A/B](notifier/.github/workflows/notify-controller.yml) | Cài tại B trước, bot đồng bộ B/main sang A/main | PR/review/Conversation events ở A và B; push main chỉ ở B |
+| [notifier dùng chung A/B](notifier/.github/workflows/notify-controller.yml) | Cài trên các nhánh B đang hoạt động, bot đồng bộ sang A | PR/review/Conversation events ở A và B; push mọi nhánh chỉ dispatch ở B |
 
 A **có workflow** nhưng không cần một bản YAML riêng. Thư mục `notifier` chứa workflow dùng chung cho cả hai bên. Cấu hình secret/variable dispatch riêng ở cả A và B theo [setup](../github-app-setup.md).
 

@@ -26,7 +26,7 @@ Member A clone/pull A/main → tạo feature branch → mở PR A, không merge
 → Notifier A nhận sự kiện PR, dispatch controller; App B push branch đóng góp và mở PR B
 → Maintainer B review/test và merge vào B/main
 → Sự kiện push tại B/main chạy notifier, App dispatch gọi controller
-→ App A fast-forward A/main về đúng SHA của B/main
+→ App A đồng bộ A/main về đúng SHA của B/main; lưu recovery và thay main nếu A lệch
 → GitHub ghi nhận PR A đã merge vì commit đã nằm trong A/main
 → Member A pull từ repo A
 ```
@@ -54,7 +54,7 @@ GitHub App cung cấp **danh tính và quyền**, script quy định **hành vi*
 | App B | Cấp token để script đọc B, đẩy branch contribution và thao tác PR B |
 | App A | Cấp token để script đọc PR A, đồng bộ A/main và cập nhật PR/comment A |
 | App dispatch | Cấp token chỉ có Actions write tại controller để notifier A/B gọi workflow |
-| Script trong controller | Ghép cặp PR; chuyển commit; sao chép review/comment; xử lý accepted/rejected; kiểm tra và fast-forward A/main |
+| Script trong controller | Ghép cặp PR; chuyển commit; sao chép review/comment; xử lý accepted/rejected; đồng bộ A/main theo B/main |
 | GitHub Actions | Khởi chạy script, cấp token trong job và ghi kết quả/log |
 
 Mỗi lượt chạy, Actions dùng private key trong secrets để tạo installation token giới hạn repo và quyền. Script nhận token qua biến môi trường để gọi GitHub API và Git; action tạo token thu hồi token ở bước kết thúc job. Không cấp key vận chuyển code cho developer A; repo A có key dispatch với phạm vi Actions tại controller như mục 2.3. Không cần máy chủ bot chạy liên tục. [Cách dùng GitHub App trong Actions](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/making-authenticated-api-requests-with-a-github-app-in-a-github-actions-workflow).
@@ -67,7 +67,7 @@ Mỗi lượt chạy, Actions dùng private key trong secrets để tạo instal
 
 Hướng dẫn triển khai trung lập nằm trong [Setup GitHub App cho A và B](github-app-setup.md). A và B là hai repo code; **controller là repo private thứ ba**, do B quản lý. Không chuyển key vận chuyển code vào A hoặc job chạy contribution để giảm số repo.
 
-Bộ mã trung lập đã có ngay trong repo docs: [controller và tests](templates/controller), cùng [workflow notifier dùng cho A/B](templates/B/.github/workflows/notify-controller.yml). [File setup](github-app-setup.md) chỉ rõ nơi copy và thay placeholder. Controller hiện tại là `44304dba62b73c0e0479bc7ce0bebadbf8bc5a47`, có 19 tests; notifier được đưa vào B/main tại `1985f3afc6992aa04fc3665465e32f10a97f0e69` rồi đồng bộ về A. Không công bố private key.
+Bộ mã trung lập đã có ngay trong repo docs: [controller và tests](templates/controller), cùng [workflow notifier dùng cho A/B](templates/B/.github/workflows/notify-controller.yml). [File setup](github-app-setup.md) chỉ rõ nơi copy và thay placeholder. Controller hiện tại là `151e9bc896dfedc5f4573ad7d07d933754a0e8fc`, có 22 tests; notifier được đưa vào B/main tại `1985f3afc6992aa04fc3665465e32f10a97f0e69` rồi đồng bộ về A. Không công bố private key.
 
 ### 2.1. Tạo hai App vận chuyển code và giới hạn quyền
 
@@ -87,7 +87,7 @@ Trong session `pho-veteran`, mở **TF4-Phase3-TechX → Settings → Developer 
 
 App B đọc B/main, push branch đóng góp, mở/cập nhật PR. `Contents: read` không đủ để đưa commit vào repo B. Không cấp Administration, Actions write, Checks write, Commit statuses write hoặc quyền organization. [API tạo Git ref](https://docs.github.com/en/rest/git/refs#create-a-reference), [API merge PR](https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request).
 
-App A đọc PR A, cập nhật comment/trạng thái và fast-forward A/main. Quyền Workflows write của App A cho phép đồng bộ cả thay đổi workflow đã được B chấp nhận. App B đã bỏ quyền này; contribution từ A thay đổi `.github/workflows/` bị controller chặn và cần maintainer B xử lý riêng.
+App A đọc PR A, cập nhật comment/trạng thái và đồng bộ A/main. Quyền Workflows write của App A cho phép đồng bộ cả thay đổi workflow đã được B chấp nhận. App B đã bỏ quyền này; contribution từ A thay đổi `.github/workflows/` bị controller chặn và cần maintainer B xử lý riêng.
 
 ### 2.2. Tạo key và cài đúng repo
 
@@ -124,7 +124,7 @@ Các file đã triển khai trong controller:
 - [`scripts/pr-bridge-policy.mjs`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/blob/main/scripts/pr-bridge-policy.mjs): giới hạn API mutation, ref push và xử lý trạng thái.
 - [`scripts/pr-bridge-reviews.mjs`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/blob/main/scripts/pr-bridge-reviews.mjs): sao chép review đã submit và comment theo dòng của B về A.
 - [`scripts/pr-bridge-comments.mjs`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/blob/main/scripts/pr-bridge-comments.mjs): sao chép comment hội thoại hai chiều, giữ nguồn và chống vòng lặp.
-- [`tests`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/tree/main/tests): 19 test gồm 7 policy/boundary, 5 review, 4 hội thoại và 3 kiểm tra metadata sự kiện.
+- [`tests`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/tree/main/tests): 22 test gồm 7 policy/boundary, 5 review, 4 hội thoại, 3 kiểm tra metadata sự kiện và 3 Git recovery/lease.
 
 Khi **B/main có push mới**, gồm merge PR và commit trực tiếp, workflow tại B tự dispatch controller. Không cần maintainer bấm Run workflow hoặc đợi lịch để đồng bộ B/main về A/main. GitHub nhận sự kiện ngay; thời điểm job bắt đầu và hoàn tất vẫn phụ thuộc hàng đợi Actions.
 
@@ -151,7 +151,7 @@ PR/review/comment tại A/B, hoặc B/main push
 → Token App dispatch, chỉ repo controller / Actions write
 → POST controller.yml/dispatches, ref=main
 → Controller: policy → reconcile
-→ Đọc B/main thực tế → fast-forward A/main → cập nhật PR A
+→ Đọc B/main thực tế → đồng bộ A/main (recovery và thay main nếu lệch) → cập nhật PR A
 ```
 
 Notifier không checkout/chạy contribution, dependency hoặc Git hook. `GITHUB_TOKEN` có `permissions: {}`; endpoint controller, workflow và ref cố định. Metadata chỉ để truy vết; controller đọc lại PR và B/main thực tế. `pull_request_target` xử lý opened/synchronize/reopened/closed/ready_for_review/edited từ base main; `issue_comment`, `pull_request_review` và `pull_request_review_comment` xử lý trao đổi. Sự kiện PR/comment/review từ Bot bị skip; push main chỉ dispatch tại B, không dispatch tại A.
@@ -177,7 +177,7 @@ Push do `GITHUB_TOKEN` tạo thường không kích hoạt workflow tiếp theo.
 | Repo A chỉ có credential dispatch | 1 secret dispatch; không có key vận chuyển code |
 | Controller không cho gọi merge endpoint, ghi ref ngoài phạm vi hoặc push B/main | 7 test policy/boundary pass; đây là guard trong code |
 
-Controller chỉ push `incoming/a-pr-<số PR A>` tại B và `main` tại A; không force-push. Nó kiểm tra source SHA, base main, repo và tác giả App của PR ghép cặp trước khi cập nhật. Nội dung PR không được dùng làm lệnh shell. Khi A/main không còn là ancestor của B/main, controller dừng để maintainer reconcile.
+Controller chỉ push `incoming/a-pr-<số PR A>` tại B; tại A chỉ cập nhật `main` và `recovery/a-main-<SHA>`. Nó kiểm tra source SHA, base main, repo và tác giả App của PR ghép cặp trước khi cập nhật. Khi A lệch, bot lưu SHA cũ và thay main bằng B/main trong cùng atomic push, dùng force-with-lease. Nếu A đổi đồng thời, cả thao tác bị từ chối. Không force-push B/main hoặc feature branch.
 
 **B/main: chỉ maintainer B được đưa code vào**
 
@@ -202,7 +202,7 @@ Dùng **Create a merge commit**; tắt squash/rebase merge và không yêu cầu
 
 **A/main: chỉ App A đồng bộ từ B**
 
-App A đã được cài riêng. Đề xuất ruleset `Restrict updates` cho main, chỉ App A được bypass rule này. Tạo ruleset riêng chặn force-push/xóa và không cấp bypass. Không cần mở thêm PR đồng bộ tại A vì B đã quyết định. Member A không được push/merge main; không cho toàn bộ `github-actions[bot]` quyền bypass. [Quy tắc ruleset](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets).
+App A đã được cài riêng. Đề xuất ruleset `Restrict updates` cho main, chỉ App A được bypass rule này. Cho phép riêng App A force-push A/main để phục hồi; nếu dùng ruleset chặn force-push thì bypass rule đó chỉ cho App A. Giữ rule chặn xóa riêng không bypass. Không cần mở thêm PR đồng bộ tại A vì B đã quyết định. Member A không được push/merge main; không cho toàn bộ `github-actions[bot]` quyền bypass. [Quy tắc ruleset](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets).
 
 **Controller và phạm vi tin cậy**
 
@@ -218,7 +218,7 @@ App A đã được cài riêng. Đề xuất ruleset `Restrict updates` cho mai
 - Chỉnh sửa comment nguồn được cập nhật ở lượt sau; xóa comment nguồn chưa xóa bản sao. Không đồng bộ emoji reaction, trạng thái Resolve conversation, file đính kèm hoặc log CI. Reply trong review được chuyển theo review tương ứng; hội thoại từ A nên viết tại tab Conversation.
 - Nội dung vượt giới hạn một comment làm run báo lỗi để maintainer tách nội dung, không âm thầm cắt bớt findings. Review giữ SHA và diff gốc; vị trí cũ được đánh dấu `outdated`. Approval của bản cũ không được diễn giải là approval của head mới.
 - Nếu B từ chối và đóng PR không merge, bot đóng PR A với trạng thái rejected; không tự mở lại cặp đó. Nếu A có commit mới sau lúc B merge, controller không đánh dấu những commit chưa được B nhận là hoàn tất; cần PR mới cho phần còn lại.
-- Nếu B nhận hotfix trong khi A còn làm feature, bot vẫn đồng bộ B/main về A/main. Developer pull A/main rồi merge main vào feature, tự xử lý conflict và push lại qua cùng PR. Bot không tự giải quyết conflict và không force-push để che sai lệch.
+- Nếu B nhận hotfix trong khi A còn làm feature, bot vẫn đồng bộ B/main về A/main. Developer pull A/main rồi merge main vào feature, tự xử lý conflict và push lại qua cùng PR. Bot không tự giải quyết conflict hoặc force-push feature branch; A/main vẫn phản chiếu B/main theo chính sách mới.
 
 Sau khi bật policy trên gói hỗ trợ, cần test thực tế: App B mở PR được nhưng không push/merge/force-push/xóa main; member A không push/merge main; maintainer B vẫn merge được và App A đồng bộ được. Test thêm stale approval, conflict, main lệch, token bị thu hồi và retry. **Các kiểm tra từ chối do branch protection này chưa chạy trong lab Free.**
 
@@ -247,11 +247,11 @@ A nhận cả nội dung yêu cầu, tên file, dòng, SHA đã review và diff 
 
 **Đóng PR không merge:** maintainer đóng [B #21](https://github.com/TF4-Phase3-TechX/bot-bridge-lab/pull/21) lúc 04:45:45 UTC; [A #9](https://github.com/Vihnnnn/bot-bridge-lab/pull/9) tự đóng lúc 04:46:11 UTC. Cả hai có `merged=false`. Không có thao tác dispatch tay; khoảng thời gian quan sát là 26 giây, không phải cam kết độ trễ.
 
-**Guard khi A/main bị ghi trực tiếp:** trong lúc test A #10 / B #23, A/main nhận commit `0ec5302` chưa qua B. [Notifier A 39371847911](https://github.com/Vihnnnn/bot-bridge-lab/actions/runs/39371847911) vẫn tự kích hoạt [controller 39371857516](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39371857516); controller dừng với `A/main contains history not accepted by B`. Đây là lỗi baseline, không phải notifier chưa chạy.
+**Guard ở bản trước khi A/main bị ghi trực tiếp:** trong lúc test A #10 / B #23, A/main nhận commit `0ec5302` chưa qua B. [Notifier A 39371847911](https://github.com/Vihnnnn/bot-bridge-lab/actions/runs/39371847911) vẫn tự kích hoạt [controller 39371857516](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39371857516); controller dừng với `A/main contains history not accepted by B`. Đây là lỗi baseline của lượt test cũ, không phải notifier chưa chạy; bản mới xử lý theo mục 2.7.
 
 ![Controller đã được sự kiện A kích hoạt, dừng vì A/main có lịch sử chưa được B chấp nhận](proposal-images/event-03-main-guard.png)
 
-**Phục hồi baseline:** theo quyết định B là source of truth, maintainer lưu commit lệch ở branch `recovery/a-main-before-b-sync-0ec53025dce5`, rồi đưa riêng A/main về B/main `1985f3a` bằng force-with-lease, kiểm tra SHA cũ trước khi ghi. Thao tác phục hồi một lần hoàn tất lúc **11:58:16 ngày 20/10/2026 (UTC+7)**. Controller không được đổi sang tự force-push. [Comment tại A #10](https://github.com/Vihnnnn/bot-bridge-lab/pull/10#issuecomment-6283740451) kích hoạt lại luồng sự kiện; protection A/main cần ngăn developer ghi/merge trực tiếp trong môi trường vận hành.
+**Phục hồi baseline ở bản trước:** maintainer lưu commit lệch ở branch `recovery/a-main-before-b-sync-0ec53025dce5`, rồi đưa riêng A/main về B/main `1985f3a` bằng force-with-lease, kiểm tra SHA cũ trước khi ghi. Thao tác hoàn tất lúc **11:58:16 ngày 20/10/2026 (UTC+7)**. Bản tiếp theo tại mục 2.7 đã tự động hóa recovery và thay A/main. [Comment tại A #10](https://github.com/Vihnnnn/bot-bridge-lab/pull/10#issuecomment-6283740451) kích hoạt lại luồng sự kiện; protection A/main cần ngăn developer ghi/merge trực tiếp trong môi trường vận hành.
 
 **Tiếp tục cùng cặp A #10 / B #23 sau phục hồi:**
 
@@ -277,6 +277,21 @@ Merge B tạo [notifier push 39372614624](https://github.com/TF4-Phase3-TechX/bo
 Hai commit `36a4538` và `177394a` vẫn nằm nguyên SHA trong lịch sử main. Không merge PR tại A, không tạo merge commit độc lập ở A. Branch recovery giữ commit ngoài luồng; commit đó không được tự nhập vào B/main.
 
 GitHub hiển thị controller là `workflow_dispatch` vì App gọi API này; kiểm tra actor App dispatch và phần **trigger** trong summary để truy về notifier nguồn. Một đợt sự kiện gần nhau có thể thay thế run đang chờ theo concurrency; lượt controller tiếp theo đọc lại toàn bộ trạng thái hiện tại. Không coi một run bị cancelled là evidence thành công.
+
+### 2.7. A/main luôn theo B/main và phạm vi đồng bộ
+
+Bản hiện tại đọc B/main thực tế ở mỗi lượt reconcile. Nếu A/main lệch, App A lưu SHA cũ vào `recovery/a-main-<SHA>` và thay A/main bằng B/main trong cùng atomic push, với lease kiểm tra SHA cũ. Không tự merge hai main. Branch contribution không bị reset. App A cần được phép force-push riêng A/main và tạo branch recovery; App B vẫn không được ghi main.
+
+**Test thật ngày 20/10/2026:** baseline `7fcea9e`; tạo commit rỗng riêng tại A (`2212dd6`) rồi commit rỗng tại B (`29cf9f7`). Sự kiện B/main tự gọi [controller run 39379674461 — Success](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39379674461). Kết quả A/main = B/main = `29cf9f7176a9918d94ad6864b140f65f1681f9f1`; branch `recovery/a-main-2212dd6fc0da282a02a5942459ec0437f7790b0c` giữ đúng commit lệch. Tree trước và sau giống nhau, không sửa nội dung code. 22 test pass, gồm kiểm tra atomic recovery, lease khi A thay đổi đồng thời và backup ref bị chiếm.
+
+- PR tạo trực tiếp ở B không tạo PR tại A. Ví dụ B #25 đã merge và code có trong cả hai main; đây là đồng bộ main, không phải đồng bộ PR B → A.
+- Contribution PR đi A → B. Chỉ review/comment của cặp PR đó mới được sao chép hai chiều.
+- Luồng được test live dùng **merge commit**. Squash/rebase chưa được test live và chưa hỗ trợ đúng việc hoàn tất PR A: SHA gốc bị thay nên có thể báo `new-commits-pending` dù nội dung đã merge. A/main vẫn đồng bộ theo B/main. [Merge methods](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/about-merge-methods-on-github).
+- CI contribution Success chỉ nói code pass kiểm tra. Notifier Success chỉ nói đã gửi yêu cầu; cần xem job `reconcile` trong repo controller, SHA trước/sau và trạng thái từng cặp PR. `pending`, `rejected` hoặc `blocked-workflow-change` không đồng nghĩa bot đã mở PR mới hay merge code.
+
+Ba App tách ba quyền: App A ghi A, App B ghi branch/PR B, App dispatch gọi Actions controller. Key dispatch nằm tại A/B; key vận chuyển code chỉ ở controller. Có thể gộp còn hai App, nhưng khi đưa key của App đã gộp vào A thì A có thể xin token cho các quyền/installation khác của App đó. Vì vậy bản này giữ App dispatch riêng.
+
+Không cần fork để khởi tạo A: maintainer clone lịch sử main hiện có của B và push main sang repo A private trống, rồi triển khai Apps/controller/notifier. Không chép file thành một initial commit mới. Các lệnh bootstrap và cấu hình quyền nằm trong [setup trung lập](github-app-setup.md).
 
 ## 3. Triển khai — Một luồng từ contribution đến B merge và A reconcile
 

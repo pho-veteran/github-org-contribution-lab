@@ -25,6 +25,7 @@ Các ràng buộc:
 Member A clone/pull A/main → tạo feature branch → mở PR A, không merge
 → Controller đọc PR A, App B push branch đóng góp và mở PR B
 → Maintainer B review/test và merge vào B/main
+→ Sự kiện push tại B/main chạy notifier, App dispatch gọi controller
 → App A fast-forward A/main về đúng SHA của B/main
 → GitHub ghi nhận PR A đã merge vì commit đã nằm trong A/main
 → Member A pull từ repo A
@@ -32,11 +33,11 @@ Member A clone/pull A/main → tạo feature branch → mở PR A, không merge
 
 B chưa merge thì đóng góp vẫn nằm trên branch. B từ chối thì đóng góp không vào main. Bot không gọi API merge tại B và không tạo merge commit độc lập tại A. B dùng **Create a merge commit** để giữ nguyên commit gốc.
 
-Luồng hợp nhất đã chạy thật ngày **20/10/2026**, dùng cùng cặp PR **A #5 / B #17**: mở PR → thêm commit → Request changes → sửa và trao đổi comment hai chiều → approve → B merge → Actions reconcile A/main → PR A hoàn tất. Controller và key nằm trong repo riêng do B quản lý; developer A chỉ dùng repo A.
+Luồng hợp nhất đã chạy thật ngày **20/10/2026**, dùng cùng cặp PR **A #6 / B #18**: mở PR → thêm commit → Request changes → sửa và trao đổi comment hai chiều → approve → B merge → Actions reconcile A/main → PR A hoàn tất. Controller và key vận chuyển code nằm trong repo riêng do B quản lý; key dispatch chỉ nằm tại repo B; developer A chỉ dùng repo A.
 
 App B cần `Contents: write` để chuyển commit sang branch của repo B độc lập. GitHub không có permission đủ cho luồng này mà chỉ cho mở PR, tuyệt đối không cho merge. Để cưỡng chế “B quyết định”, phải kết hợp quyền App với bảo vệ B/main ở mục 2.4.
 
-GitHub App không tiêu thụ user seat. Actions của luồng mới chạy tại repo controller ở **org B**; chi phí phụ thuộc hạn mức và sử dụng của org này. Chi phí gói hỗ trợ branch protection là khoản riêng. [GitHub App và seat](https://docs.github.com/en/apps/creating-github-apps/about-creating-github-apps/deciding-when-to-build-a-github-app).
+GitHub App không tiêu thụ user seat. Actions notifier và controller chạy tại **org B**; chi phí phụ thuộc hạn mức và sử dụng của org này. Chi phí gói hỗ trợ branch protection là khoản riêng. [GitHub App và seat](https://docs.github.com/en/apps/creating-github-apps/about-creating-github-apps/deciding-when-to-build-a-github-app).
 
 Giải pháp giữ metadata tác giả, nhưng author/email tự cấu hình được nên chưa chứng minh danh tính người tạo commit. Nếu cần chống giả mạo, phải yêu cầu ký commit và xác minh signer; lab chưa cấu hình ký commit. App token không cấp cho tài khoản cá nhân A quyền mở giao diện private repo B.
 
@@ -44,7 +45,7 @@ Một cặp PR được giữ xuyên suốt các lần sửa. Code đi A → B; 
 
 ## 2. Setup lab GitHub App
 
-### 2.1. Tạo hai App và giới hạn quyền
+### 2.1. Tạo hai App vận chuyển code và giới hạn quyền
 
 Trong session `pho-veteran`, mở **TF4-Phase3-TechX → Settings → Developer settings → GitHub Apps → New GitHub App**. Tạo hai App do B quản lý:
 
@@ -101,13 +102,43 @@ Các file đã triển khai trong controller:
 - [`scripts/pr-bridge-comments.mjs`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/blob/main/scripts/pr-bridge-comments.mjs): sao chép comment hội thoại hai chiều, giữ nguồn và chống vòng lặp.
 - [`tests`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/tree/main/tests): 16 test gồm 7 policy/boundary, 5 review và 4 đồng bộ hội thoại.
 
-Controller chạy lịch ở phút **7, 22, 37, 52 mỗi giờ** hoặc được maintainer B bấm **Actions → Isolated bridge - B decides → Run workflow → main**. Cả chuyển PR sang B lẫn đồng bộ về A đều qua polling; mở PR tại A không kích hoạt ngay controller. Actions có thể bị trễ lịch.
+Khi **B/main có push mới**, gồm merge PR và commit trực tiếp, workflow tại B tự dispatch controller. Không cần maintainer bấm Run workflow hoặc đợi lịch để đồng bộ B/main về A/main. GitHub nhận sự kiện ngay; thời điểm job bắt đầu và hoàn tất vẫn phụ thuộc hàng đợi Actions.
+
+Lịch **7, 22, 37, 52 mỗi giờ** được giữ để đọc PR/comment/review và phục hồi nếu notifier lỗi. Mở PR, push feature hoặc viết comment tại A vẫn chờ lịch này, hoặc maintainer B bấm **Actions → Isolated bridge - B decides → Run workflow → main**. Không coi các sự kiện đó là realtime trong lab.
 
 Job `policy` kiểm tra code trước; job `reconcile` chỉ chạy trên main của đúng repo controller, khi bật `BRIDGE_ENABLED` và sự kiện là schedule/dispatch. Các lượt reconcile chạy tuần tự. `GITHUB_TOKEN` chỉ có Contents read để checkout controller; hai App tạo installation token giới hạn đúng một repo trong mỗi lượt chạy. Không lưu PAT cá nhân vào Actions.
 
 Job có key chỉ checkout main của controller do B quản lý. PR A được đọc như dữ liệu và Git objects, không checkout/chạy code, hook hoặc dependency từ contribution. CI chạy riêng không nhận key bridge; các action được pin bằng commit SHA.
 
 Lab đã tắt workflow cũ `bridge-to-b.yml` tại cả A và B, gỡ secret/variable bridge cũ tại A. API xác nhận **repo A có 0 Actions secrets**. Member A không có quyền đọc repo controller. Các file controller cũ có thể còn trong lịch sử repo lab, nhưng luồng đang chạy dùng repo controller riêng ở trên.
+
+**App thứ ba chỉ dùng để kích hoạt controller**
+
+1. B tạo `TechX Controller Dispatch Lab`: chỉ `Actions: read and write`, `Metadata: read`; các quyền khác No access, webhook tắt, chỉ cho cài tại org B.
+2. Cài App với **Only select repositories → bot-bridge-controller**. Không cài App dispatch tại repo code A hoặc B.
+3. Tại **repo B → Settings → Secrets and variables → Actions**, lưu variable `CONTROLLER_DISPATCH_APP_CLIENT_ID` = `Iv23li4rfDPJcho8vRzt`, secret `CONTROLLER_DISPATCH_APP_PRIVATE_KEY` = PEM của App dispatch. Key hai App vận chuyển code vẫn chỉ ở controller.
+4. Deploy controller có inputs `source_repo`, `source_sha`, `source_run_id` trước; sau đó B thêm [`.github/workflows/notify-controller.yml`](https://github.com/TF4-Phase3-TechX/bot-bridge-lab/blob/main/.github/workflows/notify-controller.yml) vào main.
+
+App dispatch đã cài: App ID `5390691`, installation `173256492`; API xác nhận chỉ thấy `TF4-Phase3-TechX/bot-bridge-controller`.
+
+```text
+B/main push
+→ B: Notify controller on B main update
+→ Token App dispatch, chỉ repo controller / Actions write
+→ POST controller.yml/dispatches, ref=main
+→ Controller: policy → reconcile
+→ Đọc B/main thực tế → fast-forward A/main → cập nhật PR A
+```
+
+Notifier không checkout/chạy code contribution; `GITHUB_TOKEN` có `permissions: {}`. Repo đích, workflow và ref được cố định trong YAML. SHA và run ID chỉ để truy vết; controller không dùng SHA do người gọi gửi để thay thế B/main thực tế. Bản workflow được đồng bộ sang A nhưng job có điều kiện đúng repo B và `refs/heads/main`, nên bị skip ở A và không tạo vòng lặp.
+
+`Actions: write` áp dụng toàn repo controller, **không phải quyền chỉ chạy một workflow**. Bảo vệ key dispatch và quyền sửa workflow B; không checkout code PR hoặc dùng `pull_request_target` với key này. Người sửa được workflow B có thể sử dụng credential dispatch. Controller vẫn phải kiểm tra repo/ref và giữ nguyên các guard ở mục 2.4.
+
+Push do `GITHUB_TOKEN` tạo thường không kích hoạt workflow tiếp theo. Automation ghi B/main phải dùng GitHub App token phù hợp hoặc gọi dispatch rõ ràng; lab kiểm tra push và merge bằng tài khoản maintainer. Nếu push có chỉ thị skip CI hoặc Actions bị tắt thì notifier cũng không đảm bảo chạy; lịch controller là phương án phục hồi. [Quy tắc kích hoạt bằng token](https://docs.github.com/en/actions/concepts/security/github_token).
+
+**Kiểm tra khi cài notifier:** commit trực tiếp `5c1db8e` tại B/main tự tạo [notifier run 39366960115](https://github.com/TF4-Phase3-TechX/bot-bridge-lab/actions/runs/39366960115), rồi [controller run 39366971430](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39366971430) sau 8 giây. Cả hai Success; A/main được fast-forward về đúng SHA của B. Phần 3 kiểm tra tiếp trường hợp merge PR.
+
+![Kiểm tra push trực tiếp: App dispatch tự chạy controller và đồng bộ A/main](proposal-images/auto-02-direct-push.png)
 
 ### 2.4. Guard đã triển khai và bảo vệ nhánh cần bổ sung
 
@@ -195,11 +226,13 @@ Endpoint chỉ chấp nhận đúng lệnh, repo/installation đã cấu hình v
 
 Dùng credential riêng chỉ cài tại controller với Actions write để dispatch; giữ credential ở endpoint do B quản lý, không đặt ở A và không mở rộng quyền App B vận chuyển code. Actions write là quyền cấp repo, không tự giới hạn vào một workflow; endpoint phải cưỡng chế danh sách thao tác được phép. Developer chỉ có quyền yêu cầu chạy lại, không có quyền merge, force-sync hay bỏ qua trạng thái review. [API workflow dispatch](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event).
 
-Đây là phần mở rộng **chưa triển khai**: cần endpoint chạy được từ Internet, cấu hình webhook App A và credential dispatch. Lệnh `/bridge sync` hiện chưa có tác dụng trong lab. Nếu chỉ bổ sung đọc lệnh qua lịch polling thì không cần endpoint, nhưng vẫn phải đợi lịch; đó không phải kích hoạt ngay. Thời gian chạy sau dispatch cũng phụ thuộc hàng đợi GitHub Actions.
+Đây là phần mở rộng **chưa triển khai**: cần endpoint chạy được từ Internet và cấu hình webhook App A; credential cho endpoint phải được cấp riêng. App dispatch ở mục 2.3 hiện chỉ phục vụ workflow B/main, chưa có endpoint nhận lệnh từ A. Lệnh `/bridge sync` hiện chưa có tác dụng trong lab. Nếu chỉ bổ sung đọc lệnh qua lịch polling thì không cần endpoint, nhưng vẫn phải đợi lịch; đó không phải kích hoạt ngay. Thời gian chạy sau dispatch cũng phụ thuộc hàng đợi GitHub Actions.
 
 ## 3. Triển khai — Một luồng từ contribution đến B merge và A reconcile
 
-Lượt test ngày **20/10/2026** dùng duy nhất [PR A #5](https://github.com/Vihnnnn/bot-bridge-lab/pull/5) và [PR B #17](https://github.com/TF4-Phase3-TechX/bot-bridge-lab/pull/17). Mỗi ảnh dưới đây thuộc cặp PR này hoặc Actions xử lý cặp PR này.
+Lượt test ngày **20/10/2026** dùng duy nhất [PR A #6](https://github.com/Vihnnnn/bot-bridge-lab/pull/6) và [PR B #18](https://github.com/TF4-Phase3-TechX/bot-bridge-lab/pull/18). Mỗi ảnh dưới đây thuộc cặp PR này hoặc Actions xử lý cặp PR này.
+
+Ảnh diff sửa và comment “đã xử lý” được chụp lại sau khi luồng hoàn tất để thấy đủ nội dung; badge Merged trên các ảnh đó là trạng thái lúc chụp. Commit, review và comment trong timeline ghi lại đúng thứ tự các bước.
 
 ```text
 A mở PR → bot mở PR B
@@ -207,45 +240,45 @@ A mở PR → bot mở PR B
 → B Request changes → bot đưa đầy đủ findings về A
 → A sửa diff + comment đã xử lý → bot chuyển code và comment sang B
 → B approve + phản hồi → bot đưa approval và comment về A
-→ Maintainer B merge
-→ Actions controller reconcile A/main từ B/main
+→ Maintainer B merge → B/main push kích hoạt notifier
+→ App dispatch tự gọi Actions controller → reconcile A/main từ B/main
 → PR A hoàn tất → developer pull từ repo A
 ```
 
-Tất cả lệnh developer dưới đây chỉ truy cập A. Controller chạy theo lịch hoặc được maintainer B dispatch tại repo controller. Trong lượt lab, mỗi mốc dùng dispatch để quan sát ngay; không đặt credential controller ở A.
+Tất cả lệnh developer dưới đây chỉ truy cập A. Các mốc chuyển PR, commit, review và comment trong lượt test dùng maintainer dispatch để quan sát ngay thay vì chờ lịch. Riêng sau B merge, notifier tự dispatch controller từ sự kiện push; không có thao tác Run workflow của maintainer. Không đặt credential controller ở A.
 
 ### Bước 1 — Developer tạo branch, commit và mở PR A
 
-Đầu lượt test, A/main và B/main cùng ở `ad284ade83f7633d3dbe0f89b52ca3ebfa716f3b`. Developer dùng tài khoản `vinh-xbrainn`:
+Đầu lượt test, A/main và B/main cùng ở `5c1db8e9700b777821cd4a8208f05d109a30b76b`. Developer dùng tài khoản `vinh-xbrainn`:
 
 ```powershell
 git clone https://github.com/Vihnnnn/bot-bridge-lab.git
 Set-Location bot-bridge-lab
 git switch main
 git pull --ff-only origin main
-git switch -c feature/unified-review-flow-20261020
+git switch -c feature/automatic-review-flow-20261020
 
 @(
   'Decision owner: TODO.'
   'Main sync: TODO.'
-) | Set-Content -LiteralPath unified-review-flow.txt -Encoding ASCII
+) | Set-Content -LiteralPath automatic-review-flow.txt -Encoding ASCII
 
-git add unified-review-flow.txt
+git add automatic-review-flow.txt
 git commit -m 'Propose review workflow responsibilities'
-git push -u origin feature/unified-review-flow-20261020
+git push -u origin feature/automatic-review-flow-20261020
 ```
 
 Git author/email phải là thông tin của developer. Lượt lab dùng email đã liên kết với `vinh-xbrainn`; không dùng tên bot thay cho tác giả. Khi tái hiện, dùng branch/file mới; SHA sẽ khác.
 
-Tại A chọn **Pull requests → New pull request**, base `main`, compare branch vừa push. Mở PR, không merge tại A. Commit đầu của lượt test là **`1de2665`**.
+Tại A chọn **Pull requests → New pull request**, base `main`, compare branch vừa push. Mở PR, không merge tại A. Commit đầu của lượt test là **`dd4552b`**.
 
-![PR A số 5 do developer mở, có một commit và đang Open](proposal-images/flow-01-a-open.png)
+![PR A số 6 do developer mở, có một commit và đang Open](proposal-images/flow-01-a-open.png)
 
 ### Bước 2 — Bot mở PR tương ứng tại B
 
-Controller đọc PR A, chuyển nguyên commit sang branch `incoming/a-pr-5` và mở **PR B #17**. App A báo trạng thái chờ B tại PR A. [Run chuyển PR đầu tiên](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39364621268) đã thành công.
+Controller đọc PR A, chuyển nguyên commit sang branch `incoming/a-pr-6` và mở **PR B #18**. App A báo trạng thái chờ B tại PR A. [Run chuyển PR đầu tiên](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39367026771) đã thành công.
 
-![App B mở PR số 17 từ contribution A số 5, giữ head và author gốc](proposal-images/flow-02-b-open.png)
+![App B mở PR số 18 từ contribution A số 6, giữ head và author gốc](proposal-images/flow-02-b-open.png)
 
 Hai main vẫn ở baseline. Mở PR và push feature branch chưa đưa contribution vào main.
 
@@ -254,23 +287,23 @@ Hai main vẫn ở baseline. Mở PR và push feature branch chưa đưa contrib
 Developer tiếp tục ngay trên branch đang mở:
 
 ```powershell
-Add-Content -LiteralPath unified-review-flow.txt -Value 'Review communication: mirrored comments between paired PRs.' -Encoding ASCII
-git add unified-review-flow.txt
+Add-Content -LiteralPath automatic-review-flow.txt -Value 'Review communication: mirrored comments between paired PRs.' -Encoding ASCII
+git add automatic-review-flow.txt
 git commit -m 'Add review communication detail while PR is open'
-git push origin feature/unified-review-flow-20261020
+git push origin feature/automatic-review-flow-20261020
 ```
 
-Commit thứ hai là **`df30c00`**:
+Commit thứ hai là **`f09883b`**:
 
-![Diff của commit bổ sung trên branch A khi PR vẫn đang mở](proposal-images/flow-03-a-new-commit.png)
+![Danh sách hai commit trên branch A khi PR vẫn đang mở](proposal-images/flow-03-a-new-commit.png)
 
-[Run cập nhật commit](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39364701675) đẩy head mới sang **cùng PR B #17**. Không mở thêm PR và không force-push.
+[Run cập nhật commit](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39367127332) đẩy head mới sang **cùng PR B #18**. Không mở thêm PR và không force-push.
 
-![PR B số 17 có hai commit của developer, gồm commit mới df30c00](proposal-images/flow-04-b-updated.png)
+![PR B số 18 có hai commit của developer, gồm commit mới f09883b](proposal-images/flow-04-b-updated.png)
 
 ### Bước 4 — B Request changes với hai findings cụ thể
 
-Maintainer B kiểm tra diff tại head `df30c00` rồi chọn **Review changes → Request changes**:
+Maintainer B kiểm tra diff tại head `f09883b` rồi chọn **Review changes → Request changes**:
 
 1. Dòng 1: xác định maintainer B là người quyết định merge.
 2. Dòng 2: mô tả bot fast-forward A/main từ B/main đã được chấp nhận; developer chỉ pull A.
@@ -296,16 +329,16 @@ Developer sửa cùng branch:
   'Decision owner: B maintainer.'
   'Main sync: the bot fast-forwards A/main from accepted B/main; developers pull only A.'
   'Review communication: mirrored comments between paired PRs.'
-) | Set-Content -LiteralPath unified-review-flow.txt -Encoding ASCII
+) | Set-Content -LiteralPath automatic-review-flow.txt -Encoding ASCII
 
 git diff
-git add unified-review-flow.txt
+git add automatic-review-flow.txt
 git commit -m 'Address both B review findings and clarify main synchronization'
-git push origin feature/unified-review-flow-20261020
+git push origin feature/automatic-review-flow-20261020
 git rev-parse HEAD
 ```
 
-Commit sửa của lượt test là **`8ed6b0f6b8a210170a55ced35e742ccc82d224d3`**:
+Commit sửa của lượt test là **`2c03f875b7e453ae88753a9d2c2f14bf9efa0ac3`**:
 
 ![Diff mới tại A thay hai TODO bằng nội dung đáp ứng findings của B](proposal-images/flow-07-a-fixed-diff.png)
 
@@ -313,7 +346,7 @@ Trong **Conversation** của PR A, developer gửi comment ghi rõ findings đã
 
 ![Developer A comment đã xử lý finding 1 và 2, nêu SHA và nội dung sửa](proposal-images/flow-08-a-addressed.png)
 
-Controller đưa commit mới và comment này sang PR B #17. Comment tại B ghi rõ người viết gốc là `vinh-xbrainn`, kèm liên kết comment nguồn. App đăng bản sao bằng identity của App, không giả danh developer.
+Controller đưa commit mới và comment này sang PR B #18. Comment tại B ghi rõ người viết gốc là `vinh-xbrainn`, kèm liên kết comment nguồn. App đăng bản sao bằng identity của App, không giả danh developer.
 
 ![PR B nhận comment đã xử lý findings từ A cùng SHA bản sửa](proposal-images/flow-09-b-addressed.png)
 
@@ -335,25 +368,41 @@ Comment hội thoại được sao chép **A ↔ B**; review đã submit và com
 
 Sau khi xác nhận đúng bản sửa, maintainer B chọn **Create a merge commit → Confirm merge**. Trong lab, thao tác dùng API với tài khoản `pho-veteran`, phương thức `merge` và expected head SHA. Bot không gọi merge endpoint.
 
-![PR B số 17 được maintainer B merge sau Request changes và Approved](proposal-images/flow-12-b-merged.png)
+![PR B số 18 được maintainer B merge sau Request changes và Approved](proposal-images/flow-12-b-merged.png)
 
-Merge commit là **`bfc5128aa61fc042aad57ab1e36b206791c2ac8b`**. B/main là lịch sử đã được chấp nhận. A/main được cập nhật trong lượt controller tiếp theo.
+Merge commit là **`40d3fb87978565ff8f9a2fd563887e7d8bdfcf3e`**. B/main là lịch sử đã được chấp nhận. Sự kiện push của merge này tự kích hoạt workflow notifier tại B; notifier gọi controller để cập nhật A/main.
 
-### Bước 9 — Actions reconcile A/main từ B/main
+### Bước 9 — B/main push tự kích hoạt Actions reconcile
+
+Merge PR B #18 tạo sự kiện `push` tại B/main. [Workflow notifier tại B — run 39367442048](https://github.com/TF4-Phase3-TechX/bot-bridge-lab/actions/runs/39367442048) tự chạy và dùng App dispatch gọi `controller.yml` trên main. Không bấm Run workflow sau merge.
+
+![B merge tạo push event và notifier tự gửi dispatch thành công](proposal-images/flow-12b-b-notify.png)
 
 Workflow tại repo controller đọc ref B/main thực tế và kiểm tra A/main có thể fast-forward. App A đẩy đúng merge SHA của B vào A/main; không tạo merge commit độc lập tại A.
 
-[Run 39365362024](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39365362024) hoàn tất **Success**; job policy pass 16 test và job reconcile báo cặp A #5 / B #17 là `accepted`.
+[Run 39367452216](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39367452216) hoàn tất **Success**; job policy pass 16 test và job reconcile báo cặp A #6 / B #18 là `accepted`.
 
 ![Actions thành công: A/main sau reconcile trùng B/main và cặp PR được accepted](proposal-images/flow-13-reconcile.png)
 
-Trong lab, maintainer B dispatch workflow sau merge. Trong vận hành hiện tại, lịch polling tự thực hiện bước này; merge B **chưa có webhook kích hoạt controller ngay lập tức**. CI trên PR B kiểm tra contribution; job `reconcile` trong controller thực hiện đồng bộ. Hai vai trò này tách biệt.
+GitHub hiển thị “Manually triggered” cho event `workflow_dispatch`, kể cả khi API được bot gọi. Trong run này, actor là **`techx-controller-dispatch-lab[bot]`**; summary liên kết trực tiếp tới push workflow tại B và ghi SHA nguồn. Đây là chuỗi tự động, không phải maintainer dispatch.
+
+Thời gian API ghi nhận ngày 20/10/2026, múi giờ Việt Nam:
+
+| Mốc | Thời gian |
+|---|---|
+| B notifier được tạo bởi push sau merge | 11:02:26 |
+| Controller được App dispatch tạo | 11:02:33 |
+| Job reconcile hoàn tất Success | 11:03:22 |
+
+Controller được tạo **7 giây** sau notifier; toàn chuỗi tới lúc reconcile hoàn tất là **56 giây** trong lượt test. Đây là số đo thực tế, không phải cam kết độ trễ. Không chờ lịch polling; thời gian chạy còn phụ thuộc hàng đợi Actions.
+
+CI trên PR B kiểm tra contribution; notifier báo main thay đổi; controller đồng bộ kết quả. Khi notifier được chép sang A, job tại A bị skip theo điều kiện repo, không dispatch ngược lại. API xác nhận A vẫn có **0 Actions secrets**.
 
 ### Bước 10 — PR A hoàn tất, developer pull từ A
 
 Khi commit của feature đã nằm trong A/main, GitHub ghi nhận PR A là **Merged** (`state: closed`, `merged: true`). Comment của bot xác nhận B đã chấp nhận và SHA đã đồng bộ. Developer A không bấm merge PR A.
 
-![PR A số 5 hoàn tất sau reconcile, bot báo accepted và cùng merge SHA của B](proposal-images/flow-14-a-completed.png)
+![PR A số 6 hoàn tất sau reconcile, bot báo accepted và cùng merge SHA của B](proposal-images/flow-14-a-completed.png)
 
 Developer nhận code:
 
@@ -361,17 +410,17 @@ Developer nhận code:
 git switch main
 git pull --ff-only origin main
 git log -4 --format='%h | %an | %s'
-Get-Content -LiteralPath unified-review-flow.txt
+Get-Content -LiteralPath automatic-review-flow.txt
 git remote -v
 ```
 
-Đã chạy pull thật bằng tài khoản `vinh-xbrainn`: local HEAD, A/main và B/main đều bằng **`bfc5128aa61fc042aad57ab1e36b206791c2ac8b`**, working tree sạch. Kết quả log:
+Đã chạy pull thật bằng tài khoản `vinh-xbrainn`: local HEAD, A/main và B/main đều bằng **`40d3fb87978565ff8f9a2fd563887e7d8bdfcf3e`**, working tree sạch. Kết quả log:
 
 ```text
-bfc5128 | Nguyen Thanh Vinh | Merge pull request #17 from TF4-Phase3-TechX/incoming/a-pr-5
-8ed6b0f | vinh-xbrainn | Address both B review findings and clarify main synchronization
-df30c00 | vinh-xbrainn | Add review communication detail while PR is open
-1de2665 | vinh-xbrainn | Propose review workflow responsibilities
+40d3fb8 | Nguyen Thanh Vinh | Merge pull request #18 from TF4-Phase3-TechX/incoming/a-pr-6
+2c03f87 | vinh-xbrainn | Address both B review findings and clarify main synchronization
+f09883b | vinh-xbrainn | Add review communication detail while PR is open
+dd4552b | vinh-xbrainn | Propose review workflow responsibilities
 ```
 
 ![File trên A/main chứa nội dung cuối đã được B chấp nhận](proposal-images/flow-15-a-main.png)

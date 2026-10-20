@@ -1,0 +1,4 @@
+.bridge-setup/
+repos-b.txt
+*.pem
+*.key

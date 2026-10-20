@@ -1,5 +1,7 @@
 # Setup contribution bridge cho nhiều repo
 
+Nếu B đã có code, A đã có repo rỗng cùng tên và máy có SSH hai bên, dùng [hướng dẫn setup bằng script](github-app-quick-setup.md): nhập link B → kiểm tra repo → cấu hình → duyệt PR → kích hoạt. Tài liệu dưới đây mô tả cấu trúc và cấu hình tương ứng.
+
 ## 1. Kiến trúc dùng chung
 
 Với **7 repo B có sẵn**, tạo **7 repo A private tương ứng**, dùng chung **3 GitHub App + 1 repo controller private + 1 bộ script**. A và B là hai organization; tên repo trong một cặp không cần giống nhau.

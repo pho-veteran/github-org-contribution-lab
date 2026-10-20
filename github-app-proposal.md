@@ -14,7 +14,7 @@ Team ở org A cần gửi code vào private repo của org B, giữ tác giả 
 
 Các ràng buộc:
 
-- Không thêm developer A vào B. Commit gốc giữ SHA, author và committer; email liên kết với tài khoản GitHub của developer.
+- Không thêm developer A vào B. Commit đóng góp phải giữ nguyên SHA, author và committer khi vận chuyển và khi vào main. B chỉ dùng **Create a merge commit**; không hỗ trợ squash/rebase.
 - B là source of truth và quyết định merge. A/main là bản đồng bộ từ B/main; member A chỉ làm feature branch, mở PR, rồi pull kết quả từ repo A.
 - Hai org dùng GitHub Free. Lab kiểm chứng luồng trên private repo, không đo hóa đơn Team. Branch protection cho private repo chưa được enforce; cấu hình cần bổ sung được ghi tại mục 2.4.
 - Link repo/PR/Actions private cần tài khoản có quyền truy cập. Các ảnh trong tài liệu public là ảnh của lượt lab đã được công bố.
@@ -31,7 +31,7 @@ Member A clone/pull A/main → tạo feature branch → mở PR A, không merge
 → Member A pull từ repo A
 ```
 
-B chưa merge thì đóng góp vẫn nằm trên branch. B từ chối thì đóng góp không vào main. Bot không gọi API merge tại B và không tạo merge commit độc lập tại A. B dùng **Create a merge commit** để giữ nguyên commit gốc.
+B chưa merge thì đóng góp vẫn nằm trên branch. B từ chối thì đóng góp không vào main. Bot không gọi API merge tại B và không tạo merge commit độc lập tại A. B dùng **Create a merge commit** để giữ nguyên commit gốc trong main.
 
 Luồng hợp nhất ban đầu đã chạy thật ngày **20/10/2026**, dùng cùng cặp PR **A #6 / B #18**: mở PR → thêm commit → Request changes → sửa và trao đổi comment hai chiều → approve → B merge → Actions reconcile A/main → PR A hoàn tất. Evidence của bản cập nhật kích hoạt theo sự kiện tại A/B nằm ở mục 2.6. Controller và key vận chuyển code nằm trong repo riêng do B quản lý; key dispatch nằm tại A và B; developer A chỉ dùng repo A.
 
@@ -67,7 +67,7 @@ Mỗi lượt chạy, Actions dùng private key trong secrets để tạo instal
 
 Hướng dẫn triển khai trung lập nằm trong [Setup GitHub App cho A và B](github-app-setup.md). A và B là hai repo code; **controller là repo private thứ ba**, do B quản lý. Không chuyển key vận chuyển code vào A hoặc job chạy contribution để giảm số repo.
 
-Bộ mã trung lập đã có ngay trong repo docs: [controller và tests](templates/controller), cùng [workflow notifier dùng cho A/B](templates/B/.github/workflows/notify-controller.yml). [File setup](github-app-setup.md) chỉ rõ nơi copy và thay placeholder. Controller hiện tại là `151e9bc896dfedc5f4573ad7d07d933754a0e8fc`, có 22 tests; notifier được đưa vào B/main tại `1985f3afc6992aa04fc3665465e32f10a97f0e69` rồi đồng bộ về A. Không công bố private key.
+Bộ mã trung lập đã có ngay trong repo docs: [controller và tests](templates/controller), cùng [workflow notifier dùng cho A/B](templates/B/.github/workflows/notify-controller.yml). [File setup](github-app-setup.md) chỉ rõ nơi copy và thay placeholder. Controller hiện tại là `bbddfdc8edb123a32fc4522e38be6ff14646a8b5`, có 26 tests; notifier được đưa vào B/main tại `1985f3afc6992aa04fc3665465e32f10a97f0e69` rồi đồng bộ về A. Không công bố private key.
 
 ### 2.1. Tạo hai App vận chuyển code và giới hạn quyền
 
@@ -124,7 +124,7 @@ Các file đã triển khai trong controller:
 - [`scripts/pr-bridge-policy.mjs`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/blob/main/scripts/pr-bridge-policy.mjs): giới hạn API mutation, ref push và xử lý trạng thái.
 - [`scripts/pr-bridge-reviews.mjs`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/blob/main/scripts/pr-bridge-reviews.mjs): sao chép review đã submit và comment theo dòng của B về A.
 - [`scripts/pr-bridge-comments.mjs`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/blob/main/scripts/pr-bridge-comments.mjs): sao chép comment hội thoại hai chiều, giữ nguồn và chống vòng lặp.
-- [`tests`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/tree/main/tests): 22 test gồm 7 policy/boundary, 5 review, 4 hội thoại, 3 kiểm tra metadata sự kiện và 3 Git recovery/lease.
+- [`tests`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/tree/main/tests): 26 test gồm policy/boundary, review, hội thoại, metadata sự kiện, Git recovery/lease và guard không chấp nhận commit gốc bị viết lại.
 
 Khi **B/main có push mới**, gồm merge PR và commit trực tiếp, workflow tại B tự dispatch controller. Không cần maintainer bấm Run workflow hoặc đợi lịch để đồng bộ B/main về A/main. GitHub nhận sự kiện ngay; thời điểm job bắt đầu và hoàn tất vẫn phụ thuộc hàng đợi Actions.
 
@@ -198,7 +198,7 @@ Tại B → **Settings → Branches → Add classic branch protection rule**, pa
 
 Chỉ yêu cầu review/CI chưa chặn bot merge sau khi checks pass. Danh sách được cập nhật main phải loại App B; hạn chế push cũng áp dụng khi merge PR. [Cấu hình protection](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/managing-a-branch-protection-rule), [giới hạn người push](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches#restrict-who-can-push-to-matching-branches).
 
-Dùng **Create a merge commit**; tắt squash/rebase merge và không yêu cầu linear history để giữ SHA gốc. Đề xuất tắt auto-merge, không dùng merge queue trong luồng này. Nếu có release branch hoặc tag cần bảo vệ, bổ sung rule cho các ref đó; rule main không bảo vệ mọi ref.
+Chỉ bật **Allow merge commits**, tắt **Allow squash merging** và **Allow rebase merging**. Không bật rule linear history vì không tương thích với merge commit. Đề xuất tắt auto-merge, không dùng merge queue trong luồng này. Nếu có release branch hoặc tag cần bảo vệ, bổ sung rule cho các ref đó; rule main không bảo vệ mọi ref.
 
 **A/main: chỉ App A đồng bộ từ B**
 
@@ -286,7 +286,17 @@ Bản hiện tại đọc B/main thực tế ở mỗi lượt reconcile. Nếu 
 
 - PR tạo trực tiếp ở B không tạo PR tại A. Ví dụ B #25 đã merge và code có trong cả hai main; đây là đồng bộ main, không phải đồng bộ PR B → A.
 - Contribution PR đi A → B. Chỉ review/comment của cặp PR đó mới được sao chép hai chiều.
-- Luồng được test live dùng **merge commit**. Squash/rebase chưa được test live và chưa hỗ trợ đúng việc hoàn tất PR A: SHA gốc bị thay nên có thể báo `new-commits-pending` dù nội dung đã merge. A/main vẫn đồng bộ theo B/main. [Merge methods](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/about-merge-methods-on-github).
+- Chỉ hỗ trợ **Create a merge commit**. Kết quả merge và source head gốc phải thuộc B/main trước khi controller đánh dấu accepted. Nếu head khớp PR đã merge nhưng commit gốc thiếu, báo `identity-not-preserved`; không tự đóng PR A còn mở. Nếu A có revision mới chưa được nhận, giữ PR mở với `new-commits-pending`.
+
+### 2.8. Kiểm tra constraint identity với squash
+
+Lượt thử ngày 20/10/2026: [A #13](https://github.com/Vihnnnn/bot-bridge-lab/pull/13) → [B #26](https://github.com/TF4-Phase3-TechX/bot-bridge-lab/pull/26) được squash thành commit `ac93dd547195067cc988534e82f3c04ef1408d27`. A/main đã đồng bộ đúng SHA này và PR A đóng, nhưng author chính của commit kết quả là `techx-vihnnnn-bridge-lab[bot]`; `vinh-xbrainn` chỉ được ghi trong `Co-authored-by`. **Lượt thử không đạt constraint identity**, không phải evidence nghiệm thu luồng được hỗ trợ.
+
+Lượt rebase [A #14](https://github.com/Vihnnnn/bot-bridge-lab/pull/14) / [B #27](https://github.com/TF4-Phase3-TechX/bot-bridge-lab/pull/27) đã dừng trước khi merge. Không công bố kết quả rebase thành công. Rebase có thể giữ author nhưng thay SHA và committer; cấu hình bàn giao chỉ dùng merge commit để giữ nguyên commit gốc.
+
+B đã tắt squash/rebase và giữ merge commit. Controller đã bỏ acceptance dựa riêng vào head khớp PR B; 26 test kiểm tra cả trường hợp commit gốc bị viết lại. Lịch sử lượt squash đã chạy được giữ lại để truy vết, không viết lại B/main để che kết quả thử.
+
+[CI controller 39381361482](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39381361482) đã pass bản guard identity mới.
 - CI contribution Success chỉ nói code pass kiểm tra. Notifier Success chỉ nói đã gửi yêu cầu; cần xem job `reconcile` trong repo controller, SHA trước/sau và trạng thái từng cặp PR. `pending`, `rejected` hoặc `blocked-workflow-change` không đồng nghĩa bot đã mở PR mới hay merge code.
 
 Ba App tách ba quyền: App A ghi A, App B ghi branch/PR B, App dispatch gọi Actions controller. Key dispatch nằm tại A/B; key vận chuyển code chỉ ở controller. Có thể gộp còn hai App, nhưng khi đưa key của App đã gộp vào A thì A có thể xin token cho các quyền/installation khác của App đó. Vì vậy bản này giữ App dispatch riêng.

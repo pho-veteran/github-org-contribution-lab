@@ -33,8 +33,14 @@ export function notificationMetadata({ source, target, repo, sha, runId, event, 
   return { repository: repo, sha, event: kind, pr: pr || null, run: `https://github.com/${repo}/actions/runs/${runId}` };
 }
 
-export function pairDecision({ merged, closed, sourceClosed, headIncluded }) {
-  if (merged) return headIncluded ? 'accepted' : 'new-commits-pending';
+export function pairDecision({ merged, closed, sourceClosed, headIncluded, mergeResultIncluded, sourceHead, mergedHead }) {
+  if (merged) {
+    if (!mergeResultIncluded) return 'merge-result-not-in-main';
+    // Identity requires the original commits in main, not just equivalent changes.
+    const exactRevision = /^[a-f0-9]{40}$/.test(sourceHead ?? '') && sourceHead === mergedHead;
+    if (headIncluded) return 'accepted';
+    return exactRevision ? 'identity-not-preserved' : 'new-commits-pending';
+  }
   if (closed) return 'rejected';
   if (sourceClosed) return 'withdrawn';
   return 'pending';

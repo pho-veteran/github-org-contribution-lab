@@ -2,191 +2,168 @@
 
 ## 1. Vấn đề và giải pháp tổng thể
 
-Team ở org A cần gửi code vào repo của org B. Nếu cấp quyền trực tiếp cho từng người ở B, các tài khoản đó có thể được tính vào số seat của gói trả phí. Yêu cầu là giữ được tác giả commit mà không thêm từng developer vào B.
+Team ở org A cần gửi code vào private repo của org B, giữ tác giả commit mà không thêm từng developer làm member/collaborator tại B. Với gói trả phí, các tài khoản được cấp quyền trực tiếp có thể làm tăng số seat.
 
 | Thành phần | Môi trường lab |
 |---|---|
-| Org A | `Vihnnnn` |
+| Repo A | `Vihnnnn/bot-bridge-lab` — private |
 | Developer A | `vinh-xbrainn` |
-| Repo A | `Vihnnnn/bot-bridge-lab` |
-| Org B | `TF4-Phase3-TechX` |
-| Người quản lý B | `pho-veteran` |
-| Repo B | `TF4-Phase3-TechX/bot-bridge-lab` |
+| Repo B | `TF4-Phase3-TechX/bot-bridge-lab` — private |
+| Maintainer B | `pho-veteran` |
+| Repo controller | `TF4-Phase3-TechX/bot-bridge-controller` — private, do B quản lý |
 
 Các ràng buộc:
 
-- Cả hai repo đều private; developer A không được thêm vào member hoặc collaborator của B.
-- Commit tại B giữ nguyên SHA, author và committer của commit gốc; email tác giả liên kết với tài khoản GitHub của developer.
-- B là source of truth: `B/main` chứa code đã được chấp nhận. A gửi thay đổi qua PR; chỉ B quyết định merge. Với cách 1, `A/main` là bản đồng bộ của `B/main`, developer không tự merge hoặc push vào `A/main`.
-- Member A chỉ clone/pull từ repo A và push feature branch tại A. Bot đọc repo private B bằng App token rồi cập nhật `A/main`; member A không cần remote B, token B hoặc SSH key B trong cách 1.
-- Hai org trong lab dùng GitHub Free. Lab mô phỏng quyền truy cập private repo, không đo hóa đơn GitHub Team. Các link repo, PR và Actions yêu cầu quyền truy cập lab; ảnh kết quả được nhúng trực tiếp trong tài liệu này.
+- Không thêm developer A vào B. Commit gốc giữ SHA, author và committer; email liên kết với tài khoản GitHub của developer.
+- B là source of truth và quyết định merge. Với cách 1, A/main là bản đồng bộ từ B/main; member A chỉ làm feature branch, mở PR, rồi pull kết quả từ repo A.
+- Hai org dùng GitHub Free. Lab kiểm chứng luồng trên private repo, không đo hóa đơn Team. Branch protection cho private repo chưa được enforce; cấu hình cần bổ sung được ghi tại mục 2.4.
+- Link repo/PR/Actions private cần tài khoản có quyền truy cập. Các ảnh trong tài liệu public là ảnh của lượt lab đã được công bố.
 
-Cách 1 dùng **GitHub App + Actions** để chuyển PR từ A sang B và đồng bộ kết quả đã được B chấp nhận về A. Cách 2 dùng **SSH deploy key** của riêng repo B để clone/pull/push; người quản lý B mở PR trên GitHub. Cả hai cách giữ tác giả commit và không thêm tài khoản developer vào B. Credential này không cấp quyền mở giao diện private repo B bằng tài khoản cá nhân của developer.
-
-GitHub App không tiêu thụ user seat. Chi phí chạy Actions phụ thuộc hạn mức và mức sử dụng của org A. [Tài liệu GitHub về App và seat](https://docs.github.com/en/apps/creating-github-apps/about-creating-github-apps/deciding-when-to-build-a-github-app).
-
-**Cách 1 — A gửi PR, B duyệt, bot đồng bộ kết quả về A**
+**Cách 1 — Hai repo, GitHub Apps và Actions**
 
 ```text
-Developer tạo feature branch từ A/main đã đồng bộ với B/main
-→ Mở PR vào A/main, giữ PR chưa merge
-→ Bot chuyển nguyên commit sang branch tại B và mở PR tương ứng
-→ B review; developer sửa tiếp tại A nếu cần
-→ B merge PR vào B/main
-→ Bot đọc B/main và fast-forward A/main đến cùng commit
-→ GitHub ghi nhận PR A đã merge khi commit của PR nằm trong A/main
-→ Member A pull main từ repo A để tiếp tục làm việc
+Member A clone/pull A/main → tạo feature branch → mở PR A, không merge
+→ Controller đọc PR A, App B push branch đóng góp và mở PR B
+→ Maintainer B review/test và merge vào B/main
+→ App A fast-forward A/main về đúng SHA của B/main
+→ GitHub ghi nhận PR A đã merge vì commit đã nằm trong A/main
+→ Member A pull từ repo A
 ```
 
-B chưa merge thì thay đổi vẫn nằm trên feature branch của A và branch PR của B. Khi B từ chối PR, code đó không được đưa vào main của bên nào. Mỗi tính năng dùng một branch riêng để B có thể duyệt độc lập.
+B chưa merge thì đóng góp vẫn nằm trên branch. B từ chối thì đóng góp không vào main. Bot không gọi API merge tại B và không tạo merge commit độc lập tại A. B dùng **Create a merge commit** để giữ nguyên commit gốc.
 
-Bot không gọi merge PR tại B hoặc tạo một merge commit độc lập tại A. Quyền mong muốn của bot ở B là **đọc code, đẩy branch đóng góp và quản lý PR; không cập nhật B/main**. GitHub không có permission riêng “chỉ mở PR, không merge” cho toàn bộ luồng này; cần kết hợp quyền App với bảo vệ nhánh ở mục 2.4.
+Luồng mới đã chạy thật ngày **20/10/2026**: PR A **#2** → PR B **#13** → B merge → App A đồng bộ → local pull từ A. Controller và key nằm trong repo riêng của B; member A không cần credential hoặc remote B.
 
-Luồng này đã được triển khai và chạy end-to-end ngày 19/10/2026: PR #1 tại A → PR #12 tại B → B merge → bot đồng bộ về A. Ảnh ở mục 3 thuộc đúng lượt chạy mới này.
+App B cần `Contents: write` để chuyển commit sang branch của repo B độc lập. GitHub không có permission đủ cho luồng này mà chỉ cho mở PR, tuyệt đối không cho merge. Để cưỡng chế “B quyết định”, phải kết hợp quyền App với bảo vệ B/main ở mục 2.4.
 
-**Cách 2 — Clone trực tiếp repo B bằng SSH deploy key**
+GitHub App không tiêu thụ user seat. Actions của luồng mới chạy tại repo controller ở **org B**; chi phí phụ thuộc hạn mức và sử dụng của org này. Chi phí gói hỗ trợ branch protection là khoản riêng. [GitHub App và seat](https://docs.github.com/en/apps/creating-github-apps/about-creating-github-apps/deciding-when-to-build-a-github-app).
+
+**Cách 2 — Một repo B, SSH deploy key**
 
 ```text
-B cài public key vào Deploy keys của repo, bật Allow write access
-→ Developer clone repo B bằng SSH private key trên máy
-→ Tạo branch, sửa file và commit với tên/email của developer
-→ Push branch bằng SSH deploy key
-→ Người quản lý B mở và merge PR trên GitHub
-→ Local pull main bằng cùng SSH key
+B cài deploy key có Allow write access
+→ Developer clone B bằng SSH key → tạo branch → commit → push
+→ Maintainer B mở PR, review và merge
+→ Developer pull B/main bằng cùng SSH key
 ```
 
-Cách 2 chỉ cần repo B trên GitHub; bản clone nằm trên máy developer. Deploy key không hết hạn theo giờ và không tạo user seat. Key chỉ dùng cho Git qua SSH, không gọi API để mở PR. [Tài liệu GitHub về deploy key](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/managing-deploy-keys).
+Deploy key không hết hạn theo giờ, chỉ cấp quyền Git cho repo được cài và không gọi API để mở PR. Người giữ key write có thể push main nếu chưa có bảo vệ nhánh. [Tài liệu deploy key](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/managing-deploy-keys).
 
-Author/email là metadata Git có thể tự cấu hình, nên việc hiển thị tài khoản trên commit chưa chứng minh người đó thực sự tạo commit. SSH deploy key xác thực quyền truy cập repo, không xác thực danh tính từng developer. Lab giữ metadata và dùng merge commit để giữ SHA; không cấu hình ký commit.
+Cả hai cách giữ metadata tác giả, nhưng author/email tự cấu hình được nên chưa chứng minh danh tính người tạo commit. Nếu cần chống giả mạo, phải yêu cầu ký commit và xác minh signer. Lab chưa cấu hình ký commit. Credential App/SSH cũng không cấp cho tài khoản cá nhân A quyền mở giao diện private repo B.
 
 ## 2. Setup lab GitHub App
 
-### 2.1. Tạo App tại org B
+### 2.1. Tạo hai App và giới hạn quyền
 
-Dùng session Edge đăng nhập `pho-veteran`, mở **TF4-Phase3-TechX → Settings → Developer settings → GitHub Apps → New GitHub App**.
+Trong session `pho-veteran`, mở **TF4-Phase3-TechX → Settings → Developer settings → GitHub Apps → New GitHub App**. Tạo hai App do B quản lý:
 
-| Trường | Giá trị |
-|---|---|
-| GitHub App name | `TechX Vihnnnn Bridge Lab` |
-| Homepage URL | `https://github.com/TF4-Phase3-TechX` |
-| Callback / user authorization / device flow | Không cấu hình |
-| Webhook → Active | Bỏ chọn |
-| Where can this GitHub App be installed? | `Only on this account` |
+| Thiết lập | App B — chuyển đóng góp | App A — đồng bộ kết quả |
+|---|---|---|
+| Tên | `TechX Vihnnnn Bridge Lab` | `TechX A Sync Lab` |
+| Homepage | `https://github.com/TF4-Phase3-TechX` | `https://github.com/TF4-Phase3-TechX` |
+| Nơi được phép cài | Only on this account | Any account, để cài vào org A |
+| Contents | Read and write | Read and write |
+| Pull requests | Read and write | Read and write |
+| Metadata | Read-only | Read-only |
+| Workflows | No access | Read and write |
+| Webhook Active | Bỏ chọn | Bỏ chọn |
+| Callback / user authorization / device flow | Không cấu hình | Không cấu hình |
 
-Quyền App đang dùng trong lab:
+App B đọc B/main, push branch đóng góp, mở/cập nhật PR. `Contents: read` không đủ để đưa commit vào repo B. Không cấp Administration, Actions write, Checks write, Commit statuses write hoặc quyền organization. [API tạo Git ref](https://docs.github.com/en/rest/git/refs#create-a-reference), [API merge PR](https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request).
 
-| Permission | Quyền |
-|---|---|
-| Contents | Read and write |
-| Pull requests | Read and write |
-| Metadata | Read-only |
-| Workflows | Read and write |
+App A đọc PR A, cập nhật comment/trạng thái và fast-forward A/main. Quyền Workflows write của App A cho phép đồng bộ cả thay đổi workflow đã được B chấp nhận. App B đã bỏ quyền này; contribution từ A thay đổi `.github/workflows/` bị controller chặn và cần maintainer B xử lý riêng.
 
-`Contents: write` cần để đưa commit và branch vào B vì A/B là hai repo độc lập; `Contents: read` cùng `Pull requests: write` không đủ. Quyền này cũng có thể dùng để merge nếu nhánh chưa được bảo vệ, nên không được coi bảng permission là cơ chế chặn merge. [API tạo Git ref](https://docs.github.com/en/rest/git/refs#create-a-reference), [API merge PR](https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request).
+### 2.2. Tạo key và cài đúng repo
 
-Lab đã cấp `Workflows: write` để vận chuyển thay đổi workflow. Với triển khai chỉ nhận code ứng dụng, đề xuất bỏ quyền này và để maintainer B xử lý thay đổi `.github/workflows/` qua quy trình riêng; việc repo có sẵn workflow không có nghĩa mọi lần push đều cần quyền này. Không cấp Administration, Actions write, Checks write, Commit statuses write hoặc quyền organization cho App bridge. Bấm **Create GitHub App** khi dựng App mới; quyền lab hiện tại chưa được thay đổi trong lần cập nhật tài liệu này.
+1. Với mỗi App, mở **Credentials → Key pairs → New key**. Lưu file `.pem` ngoài repo; không commit key.
+2. App B: **Install App → TF4-Phase3-TechX → Only select repositories → bot-bridge-lab → Install**.
+3. App A: trong session `vinh-xbrainn`, mở [trang cài App A](https://github.com/apps/techx-a-sync-lab/installations/new), chọn **Vihnnnn → Only select repositories → bot-bridge-lab → Install**. Hoàn tất Confirm access nếu GitHub yêu cầu.
+4. Khi đổi permission, kiểm tra installation đã nhận đúng quyền trước khi chạy controller.
 
-### 2.2. Tạo key và cài App
+| Thông tin đã kiểm tra | App B | App A |
+|---|---|---|
+| App ID | `5376504` | `5389681` |
+| Client ID | `Iv23li2GwmLXhSNHA2Yh` | `Iv23liiZuDkx4OtpwZcz` |
+| Installation ID | `172913981` | `173234412` |
+| Repo được cài | `TF4-Phase3-TechX/bot-bridge-lab` | `Vihnnnn/bot-bridge-lab` |
 
-1. Trong trang App, mở **Credentials → Key pairs → New key**, tải file `.pem` và lưu ngoài repo.
-2. Chọn **Install App → TF4-Phase3-TechX → Only select repositories**.
-3. Chọn duy nhất `bot-bridge-lab`, rồi **Install**.
-4. Nếu đổi permission sau khi cài, chấp nhận quyền mới trong installation tại B.
+“Any account” chỉ cho phép chủ org khác cài App A; không tự cấp quyền cho App vào mọi org. Controller vẫn kiểm tra đúng installation, org và repo đã định trước.
 
-Thông tin App đang dùng:
+### 2.3. Chạy Actions trong controller riêng
 
-| Thông tin | Giá trị |
-|---|---|
-| App ID | `5376504` |
-| Client ID | `Iv23li2GwmLXhSNHA2Yh` |
-| Installation ID | `172913981` |
-| Key trên máy lab | `C:\Users\T14s Gen 2\Desktop\techx-vihnnnn-bridge-lab.2026-10-18.private-key.pem` |
-
-App đã được tạo và cài trong lab. Có thể xem tại [trang cấu hình App](https://github.com/organizations/TF4-Phase3-TechX/settings/apps/techx-vihnnnn-bridge-lab). Khi dựng môi trường khác, dùng tên App riêng và thay các ID/key tương ứng.
-
-### 2.3. Cấu hình Actions cho cách 1
-
-Lab dùng App B hiện có và `GITHUB_TOKEN` tự cấp cho workflow tại A. Không tạo App A riêng và không lưu token cá nhân của developer trong Actions.
-
-| Credential | Vai trò |
-|---|---|
-| App B: `TechX Vihnnnn Bridge Lab` | Đọc B/main, push branch đóng góp, mở/cập nhật PR tại B; controller không gọi merge, cấu hình chặn quyền merge được đề xuất tại mục 2.4 |
-| `GITHUB_TOKEN` của repo A | Đọc PR A, fast-forward A/main theo B, cập nhật comment/trạng thái PR A |
-
-Tại repo A, mở **Settings → Secrets and variables → Actions**:
+Tạo private repo **`TF4-Phase3-TechX/bot-bridge-controller`**, chỉ maintainer B được quản lý. Tại repo này, mở **Settings → Secrets and variables → Actions**:
 
 | Loại | Tên | Giá trị |
 |---|---|---|
-| Repository variable | `BRIDGE_APP_CLIENT_ID` | `Iv23li2GwmLXhSNHA2Yh` |
-| Repository secret | `BRIDGE_APP_PRIVATE_KEY` | Nội dung PEM của App B, gồm dòng BEGIN/END |
+| Variable | `BRIDGE_APP_CLIENT_ID` | `Iv23li2GwmLXhSNHA2Yh` |
+| Secret | `BRIDGE_APP_PRIVATE_KEY` | PEM của App B, gồm dòng BEGIN/END |
+| Variable | `SOURCE_APP_CLIENT_ID` | `Iv23liiZuDkx4OtpwZcz` |
+| Secret | `SOURCE_APP_PRIVATE_KEY` | PEM của App A, gồm dòng BEGIN/END |
+| Variable | `BRIDGE_ENABLED` | `true` sau khi cài App và kiểm tra cấu hình |
 
-Workflow khai báo `contents: write` và `pull-requests: write` cho `GITHUB_TOKEN`; token này chỉ dùng tại A. App token được giới hạn vào duy nhất repo B. Hai credential đều được cấp trong mỗi lượt chạy.
+Các file đã triển khai trong controller:
 
-Các file triển khai được duyệt vào B rồi đồng bộ về A:
+- [`.github/workflows/controller.yml`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/blob/main/.github/workflows/controller.yml): workflow **Isolated bridge - B decides**.
+- [`scripts/pr-bridge.mjs`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/blob/main/scripts/pr-bridge.mjs): đọc PR, vận chuyển commit và đồng bộ main.
+- [`scripts/pr-bridge-policy.mjs`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/blob/main/scripts/pr-bridge-policy.mjs): giới hạn API mutation, ref push và xử lý trạng thái.
+- [`tests`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/tree/main/tests): 7 test cho trạng thái và giới hạn thao tác.
 
-- [`.github/workflows/bridge-to-b.yml`](https://github.com/Vihnnnn/bot-bridge-lab/blob/main/.github/workflows/bridge-to-b.yml): workflow **PR bridge - B is source of truth**, thay thế workflow push-main cũ.
-- [`scripts/pr-bridge.mjs`](https://github.com/Vihnnnn/bot-bridge-lab/blob/main/scripts/pr-bridge.mjs): vận chuyển commit, liên kết PR và đồng bộ main.
-- [`scripts/pr-bridge-policy.mjs`](https://github.com/Vihnnnn/bot-bridge-lab/blob/main/scripts/pr-bridge-policy.mjs) và [`tests/pr-bridge-policy.test.mjs`](https://github.com/Vihnnnn/bot-bridge-lab/blob/main/tests/pr-bridge-policy.test.mjs): xử lý và kiểm tra các trạng thái đồng bộ.
-- [`.github/workflows/bridge-ci.yml`](https://github.com/TF4-Phase3-TechX/bot-bridge-lab/blob/main/.github/workflows/bridge-ci.yml): kiểm tra cú pháp controller và các policy test trên PR, không dùng secret bridge.
+Controller chạy lịch ở phút **7, 22, 37, 52 mỗi giờ** hoặc được maintainer B bấm **Actions → Isolated bridge - B decides → Run workflow → main**. Cả chuyển PR sang B lẫn đồng bộ về A đều qua polling; mở PR tại A không kích hoạt ngay controller. Actions có thể bị trễ lịch.
 
-Workflow điều phối chỉ chạy tại A. Sự kiện `pull_request_target` xử lý PR mở mới, cập nhật commit, mở lại, đóng hoặc bỏ draft. Lịch chạy ở phút 7, 22, 37, 52 mỗi giờ đọc trạng thái mới từ B; có thể dùng **Run workflow** để đồng bộ ngay sau khi B merge. Lịch Actions có thể bị trễ; luồng không yêu cầu B và A cập nhật đồng thời.
+Job `policy` kiểm tra code trước; job `reconcile` chỉ chạy trên main của đúng repo controller, khi bật `BRIDGE_ENABLED` và sự kiện là schedule/dispatch. Các lượt reconcile chạy tuần tự. `GITHUB_TOKEN` chỉ có Contents read để checkout controller; hai App tạo installation token giới hạn đúng một repo trong mỗi lượt chạy. Không lưu PAT cá nhân vào Actions.
 
-Job có secret luôn checkout controller từ `main`, không checkout/chạy code của feature branch. Git vận chuyển nguyên object commit, không chạy hook. CI chạy ở job riêng với quyền đọc. Các lượt điều phối dùng cùng concurrency group trong repo A để xử lý tuần tự.
+Job có key chỉ checkout main của controller do B quản lý. PR A được đọc như dữ liệu và Git objects, không checkout/chạy code, hook hoặc dependency từ contribution. CI chạy riêng không nhận key bridge; các action được pin bằng commit SHA.
 
-Thiết lập quy trình nhánh:
+Lab đã tắt workflow cũ `bridge-to-b.yml` tại cả A và B, gỡ secret/variable bridge cũ tại A. API xác nhận **repo A có 0 Actions secrets**. Member A không có quyền đọc repo controller. Các file controller cũ có thể còn trong lịch sử repo lab, nhưng luồng đang chạy dùng repo controller riêng ở trên.
 
-- A/main: chỉ bot đồng bộ kết quả từ B; developer tạo feature branch và PR.
-- B/main: maintainer B review/test rồi dùng **Create a merge commit**, giữ SHA và metadata của commit gốc.
-- B có hotfix hoặc PR nội bộ: sau khi được chấp nhận vào B/main, bot cũng đồng bộ về A.
+### 2.4. Guard đã triển khai và bảo vệ nhánh cần bổ sung
 
-Lab này tự đồng bộ thay đổi code thông thường. Nếu B thay đổi file trong `.github/workflows/`, controller dừng và báo cần maintainer đồng bộ hoặc một App A riêng có Workflows write; không tự tăng quyền cho `GITHUB_TOKEN`. Các file workflow ban đầu được maintainer đồng bộ trong bước setup.
+**Đã triển khai và kiểm tra**
 
-### 2.4. Guard cho luồng A gửi, B quyết định
+| Kiểm tra | Kết quả |
+|---|---|
+| Token từng App chỉ thấy một repo private đã chọn | Pass |
+| App A đọc repo B; App B đọc repo A | Cả hai nhận HTTP 404 |
+| Tài khoản `vinh-xbrainn` đọc B và controller | Cả hai nhận HTTP 404 |
+| Xin token App B với Workflows write | GitHub từ chối HTTP 422 |
+| Repo A không chứa Actions secret | 0 secret |
+| Controller không cho gọi merge endpoint, ghi ref ngoài phạm vi hoặc push B/main | 7 test policy/boundary pass; đây là guard trong code |
 
-**Trạng thái lab và điều kiện áp dụng**
-
-Luồng PR và đồng bộ đã test thật; các cấu hình bảo vệ bên dưới là đề xuất, chưa bật hoặc test chặn quyền trên hai repo lab. Private repo của org cần GitHub Team/Enterprise để dùng branch protection. Hai org Free hiện chỉ kiểm chứng hành vi controller, chưa bảo đảm bot không thể ghi B/main hoặc member A không thể ghi A/main nếu dùng credential ngoài controller. Muốn cưỡng chế cả hai đầu thì cả hai org phải có gói hỗ trợ; chi phí này tách biệt với việc không thêm developer A làm seat ở B. [Phạm vi hỗ trợ](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches).
+Controller chỉ push `incoming/a-pr-<số PR A>` tại B và `main` tại A; không force-push. Nó kiểm tra source SHA, base main, repo và tác giả App của PR ghép cặp trước khi cập nhật. Nội dung PR không được dùng làm lệnh shell. Khi A/main không còn là ancestor của B/main, controller dừng để maintainer reconcile.
 
 **B/main: chỉ maintainer B được đưa code vào**
 
-Tại B → **Settings → Branches → Add classic branch protection rule**, đặt pattern `main`:
+Hai org Free chưa enforce branch protection cho private repo. Vì App B có Contents write, credential này vẫn có thể ghi main/merge nếu được dùng ngoài controller. Muốn cưỡng chế bằng GitHub, cần gói hỗ trợ như Team/Enterprise; muốn cưỡng chế cả A và B thì cần hỗ trợ ở cả hai org. [Phạm vi branch protection](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches).
 
-| Thiết lập | Giá trị đề xuất |
+Tại B → **Settings → Branches → Add classic branch protection rule**, pattern `main`:
+
+| Thiết lập đề xuất | Giá trị |
 |---|---|
-| Restrict who can push to matching branches | Chỉ user/team maintainer B; không thêm App bridge |
+| Restrict who can push to matching branches | Chỉ maintainer/team B; không thêm App bridge |
 | Require a pull request before merging | Bật |
 | Require approvals | Ít nhất 1 review của B |
-| Dismiss stale pull request approvals when new commits are pushed | Bật |
-| Restrict who can dismiss pull request reviews | Chỉ maintainer B |
-| Require status checks to pass before merging | Chọn CI bắt buộc của dự án và nguồn CI tin cậy |
-| Do not allow bypassing the above settings | Bật; không cấp bypass PR cho bot |
+| Dismiss stale approvals when new commits are pushed | Bật |
+| Restrict who can dismiss reviews | Chỉ maintainer B |
+| Require status checks | CI bắt buộc của dự án, nguồn check tin cậy |
+| Do not allow bypassing the above settings | Bật; không cấp bypass cho App bridge |
 | Allow force pushes / Allow deletions | Tắt |
 
-[Cách tạo branch protection rule](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/managing-a-branch-protection-rule).
+Chỉ yêu cầu review/CI chưa chặn bot merge sau khi checks pass. Danh sách được cập nhật main phải loại App B; hạn chế push cũng áp dụng khi merge PR. [Cấu hình protection](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/managing-a-branch-protection-rule), [giới hạn người push](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches#restrict-who-can-push-to-matching-branches).
 
-Chỉ yêu cầu review/CI là chưa đủ: sau khi checks pass, bot có Contents write vẫn có thể merge nếu được phép cập nhật nhánh. Danh sách người được push vào `main` phải loại App bridge; hạn chế này áp dụng cả khi merge PR. Chủ org vẫn có thể sửa policy, nên tài khoản quản trị nằm trong phạm vi tin cậy. [Quyền cập nhật protected branch](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches#restrict-who-can-push-to-matching-branches).
+Dùng **Create a merge commit**; tắt squash/rebase merge và không yêu cầu linear history để giữ SHA gốc. Đề xuất tắt auto-merge, không dùng merge queue trong luồng này. Nếu có release branch hoặc tag cần bảo vệ, bổ sung rule cho các ref đó; rule main không bảo vệ mọi ref.
 
-Chọn **Create a merge commit**, tắt squash/rebase merge để giữ SHA; không bật yêu cầu linear history cho luồng này. Tắt auto-merge và không dùng merge queue trong cấu hình đề xuất để thao tác nhận code vẫn do maintainer B thực hiện. App chỉ được cài vào repo cần bridge. Controller chỉ đẩy `incoming/a-pr-<số PR A>`; đây là kiểm tra trong controller, không phải phạm vi quyền branch của token. Nếu B có thêm nhánh release hoặc tag cần bảo vệ thì áp dụng rules tương ứng; bảo vệ `main` không bảo vệ mọi ref khác.
+**A/main: chỉ App A đồng bộ từ B**
 
-**A/main và credential của bộ đồng bộ**
+App A đã được cài riêng. Đề xuất ruleset `Restrict updates` cho main, chỉ App A được bypass rule này. Tạo ruleset riêng chặn force-push/xóa và không cấp bypass. Không cần mở thêm PR đồng bộ tại A vì B đã quyết định. Member A không được push/merge main; không cho toàn bộ `github-actions[bot]` quyền bypass. [Quy tắc ruleset](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets).
 
-Lab dùng `GITHUB_TOKEN` của repo A để fast-forward. Khi cần cưỡng chế quyền, đề xuất dùng một App đồng bộ A riêng, cài duy nhất tại repo A; chỉ App này được cập nhật `A/main`. Ví dụ dùng ruleset `Restrict updates` cho `main`, chỉ App đồng bộ được bypass rule đó, và ruleset riêng chặn force-push/xóa không có bypass. Không yêu cầu tạo thêm PR ở A cho lần đồng bộ vì B đã quyết định; không mở quyền cho mọi workflow mang danh `github-actions[bot]`. [Quy tắc giới hạn cập nhật nhánh](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets).
+**Controller và phạm vi tin cậy**
 
-Giữ credential App B và App đồng bộ A trong controller do maintainer quản lý, chẳng hạn repo automation riêng mà developer A không có quyền write. Controller đọc PR A qua API và đồng bộ bằng App; member A vẫn chỉ dùng repo A. Đây là thay đổi triển khai cần làm trước khi áp dụng guard đầy đủ, chưa có trong lab.
+- Giữ hai key trong controller do B quản lý; bảo vệ main của controller và review thay đổi workflow/script. Người có quyền sửa controller/secret hoặc chính sách org thuộc phạm vi quản trị tin cậy. Không đặt lại key B ở repo A. [Bảo vệ GitHub Actions](https://docs.github.com/en/actions/reference/security/secure-use).
+- Token App không giới hạn theo branch; guard trong script không thay thế branch protection. Nếu key từng bị lộ, phải thu hồi/đổi key; việc xóa secret tại A không thu hồi các bản key đã sao chép.
+- B phải chấp nhận chia sẻ code và lịch sử reachable từ B/main với thành viên repo A. B private chặn truy cập trực tiếp, nhưng A vẫn đọc được bản sao đã đồng bộ. Controller chuyển trạng thái review cần thiết, không sao chép toàn bộ comment hoặc log nội bộ B.
+- Nếu cần xác thực tác giả, bổ sung ký commit và kiểm tra signer; giữ tên/email không chống giả mạo.
 
-Lý do: secret repo A hiện tại có thể được workflow khác do người có quyền write tạo ra sử dụng. Chỉ checkout controller từ main hoặc bảo vệ main chưa cô lập được secret khỏi mọi workflow trên feature branch. Khi chuyển controller, phải gỡ secret B khỏi repo đóng góp A và thu hồi/đổi key cũ nếu đã lộ. [GitHub Actions: quyền truy cập secrets](https://docs.github.com/en/actions/reference/security/secure-use).
-
-**Guard khi chạy controller**
-
-- Chỉ xử lý repo/installation, base `main`, PR cùng repo A và branch đích đã định trước; xác minh source head SHA và cặp PR trước khi cập nhật. Không dùng tiêu đề hoặc nội dung PR làm lệnh shell.
-- Job có credential không thực thi code, dependency, hook hay artifact từ PR. CI chạy riêng, không có key bridge; pin action theo commit SHA. Lab đã tách job điều phối và CI theo nguyên tắc này. [An toàn với pull_request_target](https://docs.github.com/en/actions/reference/security/securely-using-pull_request_target).
-- Đồng bộ A từ ref `B/main` đọc qua API/Git, không dựa vào comment “đã merge”. Chỉ fast-forward, kiểm tra SHA sau push, không tự force/reset khi hai main lệch nhau. Retry đọc lại refs và dùng lại cặp PR, không tạo merge hoặc PR trùng.
-- PR A là đầu vào để review, không phải bằng chứng xác thực author. Nếu cần chống giả danh, yêu cầu commit ký từ developer ngay từ đầu và kiểm tra signer; lab hiện chỉ chứng minh giữ metadata/SHA.
-- B phải đồng ý chia sẻ toàn bộ code và lịch sử được đồng bộ trong B/main với thành viên repo A. B private chỉ chặn truy cập trực tiếp; không ngăn A đọc bản sao bot đã chuyển về. Không chuyển secret, log CI hoặc review nội bộ ngoài dữ liệu đã cho phép.
-
-**Kiểm tra bắt buộc sau khi bật guard**
-
-Trên repo kiểm thử cùng policy, xác nhận App B vẫn đẩy branch/mở PR được nhưng bị từ chối khi push main, merge PR đã đủ approval/CI, force-push hoặc xóa main. Xác nhận member A không thể push/merge main hoặc dùng credential đồng bộ, trong khi maintainer B merge được và bot cập nhật A về đúng SHA. Thử thêm approval bị vô hiệu sau commit mới, conflict, A/main lệch, token bị thu hồi và chạy lại sau lỗi đồng bộ. Chưa có evidence cho các kiểm tra quyền này; ảnh mục 3 chỉ chứng minh luồng thành công đã chạy.
+Sau khi bật policy trên gói hỗ trợ, cần test thực tế: App B mở PR được nhưng không push/merge/force-push/xóa main; member A không push/merge main; maintainer B vẫn merge được và App A đồng bộ được. Test thêm stale approval, conflict, main lệch, token bị thu hồi và retry. **Các kiểm tra từ chối do branch protection này chưa chạy trong lab Free.**
 
 ### 2.5. Chuẩn bị máy cho cách 2
 
@@ -194,104 +171,113 @@ Máy lab dùng **PowerShell, Git và Windows OpenSSH**. Cách 2 không dùng App
 
 Lab chưa bật branch protection. Deploy key có quyền write có thể push cả `main`; luồng dưới đây dùng branch và PR theo quy trình thao tác, chưa được cưỡng chế bằng chính sách server.
 
-## 3. Triển khai cách 1 — PR tại A → B duyệt → Đồng bộ main về A
+## 3. Triển khai cách 1 — PR tại A → B merge → Bot đồng bộ A → Pull
 
-### 3.1. Chuẩn bị cùng một main
+### 3.1. Clone A và tạo contribution
 
-B là source of truth. Trước khi tạo đóng góp mới, maintainer đã đưa controller vào B và đồng bộ lịch sử được B chấp nhận về A. Hai main bắt đầu lượt test tại cùng commit `a328651dee4e8a87feb3a7a25b6f1ef15c05e799`.
+Đầu lượt test 20/10/2026, A/main và B/main cùng ở `490353ed51034262eff39a57d5fa82958f44e14a`. Developer dùng tài khoản `vinh-xbrainn` có quyền repo A. Các lệnh PowerShell tương ứng:
 
-Developer dùng `vinh-xbrainn` tại A; maintainer dùng `pho-veteran` tại B. Khi chạy lại, lấy A/main mới nhất và dùng tên branch/file mới.
+```powershell
+git clone https://github.com/Vihnnnn/bot-bridge-lab.git
+Set-Location bot-bridge-lab
+git switch main
+git pull --ff-only origin main
+git switch -c feature/isolated-controller-20261020
+git config user.name 'vinh-xbrainn'
+git config user.email '335428864+vinh-xbrainn@users.noreply.github.com'
 
-### 3.2. Developer mở PR tại A
+@(
+  'A proposes code. B decides whether to merge. The isolated controller syncs accepted B history to A.'
+  'Members of A pull only from repository A.'
+) | Set-Content -LiteralPath case1-isolated-controller-20261020.txt -Encoding ASCII
 
-Từ A/main, tạo branch `feature/case1-pr-first-20261019`, thêm file `case1-pr-first-20261019.txt`:
-
-```text
-Case 1: A proposes a PR; B approves and merges; the bot syncs accepted history back to A.
+git add case1-isolated-controller-20261020.txt
+git commit -m 'Propose code through isolated B-authoritative controller'
+git push -u origin feature/isolated-controller-20261020
 ```
 
-Commit với message `Propose contribution for B approval`, rồi mở PR vào A/main. Không merge PR tại A.
+Lượt lab tạo commit **`4576c841c95bc0b5b2e167fce4f648dc8956ea5d`**, author và committer đều là `vinh-xbrainn`. Khi tái hiện, dùng branch/file mới và email của chính developer; commit SHA mới sẽ khác.
 
-Lượt test tạo [PR A #1](https://github.com/Vihnnnn/bot-bridge-lab/pull/1), tác giả `vinh-xbrainn`, commit đầu tiên `eee22d26d5f4976d9dfef469de18bcbf630abbc6`.
+### 3.2. Mở PR A, giữ chưa merge
 
-Workflow **PR bridge - B is source of truth** tự chạy từ sự kiện mở PR. [Run tạo PR B](https://github.com/Vihnnnn/bot-bridge-lab/actions/runs/39286166439) chuyển nguyên commit sang B và ghi trạng thái chờ duyệt vào PR A.
+Tại repo A, chọn **Pull requests → New pull request**, base `main`, compare branch vừa push. Title của lượt test: `Isolated controller: B decides, A pulls from A`.
 
-### 3.3. Bot mở PR B và nhận sửa đổi từ A
+[PR A #2](https://github.com/Vihnnnn/bot-bridge-lab/pull/2) được mở bởi `vinh-xbrainn`. Member A không merge PR này. Chờ lịch controller, hoặc maintainer B chạy workflow thủ công trong repo controller.
 
-Bot `techx-vihnnnn-bridge-lab[bot]` mở [PR B #12](https://github.com/TF4-Phase3-TechX/bot-bridge-lab/pull/12), branch `incoming/a-pr-1`, base `main`. Nội dung PR chứa liên kết về PR A #1 và source SHA.
+[Run chuyển PR 39357238773](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39357238773) thành công: App B mở [PR B #13](https://github.com/TF4-Phase3-TechX/bot-bridge-lab/pull/13) từ branch `incoming/a-pr-2`, head đúng `4576c84`. App A cập nhật comment ở A với trạng thái chờ B.
 
-Để kiểm tra cập nhật PR, developer thêm dòng thứ hai tại cùng branch A:
+![PR A số 2 đang mở, App A báo chờ B duyệt PR số 13](proposal-images/case1-isolated-a-pr.png)
 
-```text
-Revision 2: this update must reach the same B pull request before approval.
-```
+Ở bước này, API xác nhận hai main vẫn ở `490353e`; contribution chưa vào main của bên nào.
 
-Commit `Update contribution before B review` tạo SHA `b218c1c393371b079948926deb654b50e039eded`. [Run cập nhật PR](https://github.com/Vihnnnn/bot-bridge-lab/actions/runs/39286318248) đưa commit mới vào cùng PR B #12; không tạo PR B thứ hai.
+### 3.3. B review và merge PR
 
-Ảnh bên dưới được chụp khi PR B còn mở, có hai commit của `vinh-xbrainn`:
+Maintainer B kiểm tra PR #13: một file mới, hai dòng thêm, head `4576c84` và tác giả commit gốc. [CI B 39357275418](https://github.com/TF4-Phase3-TechX/bot-bridge-lab/actions/runs/39357275418) pass. Đây là policy CI của lab; dự án thật cần thêm build/test của dự án.
 
-![PR B số 12 đang mở và đã nhận cả hai commit từ PR A số 1](proposal-images/case1-pr-first-b-open.png)
+Trong lượt test, `pho-veteran` gửi review **Approved** rồi merge bằng API với expected head SHA và phương thức `merge`. Khi thao tác bằng UI, chọn **Create a merge commit → Confirm merge**. App B chỉ tạo PR; quyết định merge dùng tài khoản maintainer B.
 
-Tại thời điểm này, đã kiểm tra cả A/main và B/main vẫn ở `a328651`; file mới chưa có trên main của bên nào. Tài khoản `vinh-xbrainn` gọi API repo B vẫn nhận 404, nên việc chuyển code không dựa trên cấp quyền cá nhân ở B.
+PR #13 được merge lúc **09:09:52 ngày 20/10/2026, giờ Việt Nam**, tạo commit **`7d2050b7ee5cba79c118ed0acbb1461300012490`**.
 
-### 3.4. B review, chạy CI và merge
+![PR B số 13 do App B mở, được pho-veteran review và merge](proposal-images/case1-isolated-b-merged.png)
 
-Dùng `pho-veteran` mở PR B #12. Trong **Files changed**, kiểm tra đúng một file với hai dòng mới; trong **Commits**, kiểm tra hai SHA và tác giả gốc.
+### 3.4. App A đồng bộ kết quả B
 
-Maintainer đã gửi review **Approved** cho head `b218c1c`. Check **Bridge policy checks / policy** chạy kiểm tra cú pháp controller và policy test, kết quả **pass** tại [run CI B](https://github.com/TF4-Phase3-TechX/bot-bridge-lab/actions/runs/39286354005). Đây là kiểm tra controller của lab; khi áp dụng vào dự án thật, bổ sung build/test của dự án.
+Sau B merge, maintainer chạy **bot-bridge-controller → Actions → Isolated bridge - B decides → Run workflow → main**. Trong vận hành có thể chờ lịch polling thay cho thao tác này.
 
-![CI của PR B số 12 chạy thành công](proposal-images/case1-pr-first-b-ci.png)
+[Run đồng bộ 39357421342](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39357421342) hoàn tất **Success**. Job policy pass 7 test; reconcile dùng App A fast-forward A/main đến merge commit của B, không tạo một lần merge riêng tại A.
 
-Sau khi CI pass, maintainer chọn **Merge pull request → Confirm merge**. PR #12 được merge bằng `pho-veteran`, tạo commit `490353ed51034262eff39a57d5fa82958f44e14a`.
+![Actions thành công, A/main sau đồng bộ trùng SHA B/main](proposal-images/case1-isolated-controller.png)
 
-![PR B số 12 đã được review, CI pass và merge bởi pho-veteran](proposal-images/case1-pr-first-b-merged.png)
-
-### 3.5. Bot đồng bộ đúng kết quả B về A
-
-Sau khi B merge, có thể chờ lượt polling hoặc vào **A → Actions → PR bridge - B is source of truth → Run workflow → main**.
-
-Lượt test dùng [workflow_dispatch 39287713598](https://github.com/Vihnnnn/bot-bridge-lab/actions/runs/39287713598). Job reconcile đã hoàn tất với kết quả success. Controller dùng GITHUB_TOKEN tại A để fast-forward A/main đến merge commit của B. Không gọi một lần merge độc lập tại A.
-
-Kết quả đọc lại từ GitHub API:
+Kết quả kiểm tra lại bằng GitHub API:
 
 | Thành phần | Kết quả |
 |---|---|
-| B/main | `490353ed51034262eff39a57d5fa82958f44e14a` |
-| A/main | `490353ed51034262eff39a57d5fa82958f44e14a` |
-| PR B #12 | Merged bởi `pho-veteran` |
-| PR A #1 | Merged, actor `github-actions[bot]`, cùng merge commit `490353e` của B |
-| Comment trạng thái tại A | `github-actions[bot]` xác nhận Accepted và SHA đã đồng bộ |
-| Liên kết PR | Một PR A tương ứng một PR B; một comment trạng thái được cập nhật tại A |
+| B/main | `7d2050b7ee5cba79c118ed0acbb1461300012490` |
+| A/main | `7d2050b7ee5cba79c118ed0acbb1461300012490` |
+| PR B #13 | Merged bởi `pho-veteran` |
+| PR A #2 | Merged, actor `techx-a-sync-lab[bot]`, cùng merge SHA của B |
+| Commit đóng góp | `4576c841c95bc0b5b2e167fce4f648dc8956ea5d` giữ nguyên tại cả A và B |
+| Author / committer của commit đóng góp | `vinh-xbrainn`, email liên kết đúng tài khoản GitHub |
 
-Pull lại main của A về local đã nhận đúng file mới và merge commit `490353e`; working tree sạch. Hai commit gốc `eee22d2` và `b218c1c` giữ nguyên SHA, author, committer và được GitHub liên kết với `vinh-xbrainn` ở cả hai repo. Merge commit của B chứa `b218c1c` làm parent; hai main nhận cùng merge commit, không chỉ có nội dung file giống nhau.
+Summary Actions cũng liệt kê cặp PR cũ khi quét repository; evidence của lượt mới là hàng **A #2 / B #13**.
 
-Member A thực hiện trong bản clone có `origin` trỏ tới `Vihnnnn/bot-bridge-lab`, sau khi bot báo đồng bộ xong và working tree sạch:
+### 3.5. Member A pull từ repo A
 
-```bash
-git remote get-url origin
+Trong bản clone A, sau khi bot báo đã đồng bộ và working tree sạch:
+
+```powershell
+git remote -v
 git switch main
 git pull --ff-only origin main
-git switch -c feature/next-change
+git log -2 --format='%h | %an | %s'
+Get-Content -LiteralPath case1-isolated-controller-20261020.txt
 ```
 
-Không thêm remote B hoặc dùng credential B trên máy member A. Nếu local main có commit riêng khiến pull thất bại, giữ lại công việc ở feature branch và xử lý sai lệch; không push local main lên A để ghi đè bản đồng bộ.
+Đã chạy thật bằng credential của `vinh-xbrainn`. Bản clone chỉ có origin `https://github.com/Vihnnnn/bot-bridge-lab.git`, không có remote B. Pull nhận đúng file, HEAD bằng `7d2050b`, working tree sạch:
 
-### 3.6. Hành vi khi có thay đổi hoặc lỗi
+```text
+7d2050b | Nguyen Thanh Vinh | Merge pull request #13 from TF4-Phase3-TechX/incoming/a-pr-2
+4576c84 | vinh-xbrainn | Propose code through isolated B-authoritative controller
+```
 
-| Tình huống | Controller xử lý |
+Để làm thay đổi tiếp theo, tạo feature branch mới từ main đã cập nhật. Nếu local main có commit riêng làm `--ff-only` thất bại, giữ công việc ở feature branch và reconcile; không push đè A/main.
+
+### 3.6. Khi cần sửa hoặc có sai lệch
+
+| Tình huống | Hành vi controller / thao tác cần làm |
 |---|---|
-| B chưa merge hoặc yêu cầu sửa | A/main giữ lịch sử B đã chấp nhận; bot cập nhật trạng thái review về PR A |
-| B/main có thay đổi mới | Đồng bộ main về A; developer merge main mới vào feature branch và giải quyết conflict tại A trước khi gửi lại |
-| B đóng PR không merge | Đóng PR A kèm trạng thái rejected; không tự tạo lại cặp PR đó |
-| A đóng PR trước khi B merge | Đóng PR tương ứng tại B, coi là rút đóng góp |
-| Developer push thêm commit sau phiên bản B đã merge | Đồng bộ phần được B chấp nhận, chưa hoàn tất PR A; phần mới cần PR mới từ main đã đồng bộ |
-| B merge thành công nhưng ghi A lỗi | Workflow báo lỗi; lần chạy sau kiểm tra lại refs và tiếp tục đồng bộ |
-| A/main có commit chưa được B chấp nhận | Dừng, yêu cầu maintainer reconcile; không force-push hoặc tự đưa code đó vào B |
-| B thay đổi file workflow | Dừng để maintainer đồng bộ hoặc dùng App A có Workflows write |
+| B chưa merge hoặc yêu cầu sửa | A tiếp tục commit trên feature branch; lượt polling cập nhật cùng PR B |
+| B/main có code mới | Bot đồng bộ về A; developer merge main mới vào feature branch, xử lý conflict ở A |
+| B đóng PR không merge | Đóng PR A với trạng thái rejected, không tự mở lại cặp PR |
+| A đóng PR trước khi B merge | Đóng PR tương ứng tại B, coi là rút contribution |
+| A có commit mới sau head mà B đã merge | Đồng bộ phần đã được B chấp nhận; phần mới cần PR mới từ main đã đồng bộ |
+| B merge xong nhưng ghi A lỗi | Run báo lỗi; lần sau đọc lại refs và tiếp tục |
+| A/main có lịch sử riêng chưa vào B | Dừng để maintainer reconcile, không force-push |
+| Contribution A đổi `.github/workflows/` | Chặn chuyển contribution; maintainer B xử lý riêng |
+| B đã chấp nhận thay đổi workflow vào main | App A có Workflows write để đồng bộ về A |
 
-Branch tại B do bot quản lý. Developer cập nhật branch tại A bằng commit mới, không rebase/force-push lịch sử đã chuyển. Workflow chuyển trạng thái review về A, không sao chép toàn bộ comment hay log nội bộ B.
+Branch B do bot quản lý. Developer thêm commit tại A, không rebase/force-push lịch sử đã chuyển. Lượt mới đã test thật luồng tạo PR → review/CI/merge tại B → đồng bộ A → local pull. Các nhánh lỗi và trạng thái khác có kiểm tra trong code/test; chưa chạy end-to-end từng tình huống trên hai repo thật.
 
-Luồng mở PR → sửa thêm → B review/CI/merge → đồng bộ A đã được test thật. Các nhánh quyết định về lệch main, từ chối, rút PR và commit mới chưa được B chấp nhận có policy test; chưa chạy từng tình huống lỗi trên hai repo thật.
 
 ## 4. Triển khai cách 2 — SSH clone B → Commit → PR → Merge → Pull
 

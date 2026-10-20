@@ -1,0 +1,12 @@
+{
+  "controllerRepo": "B_OWNER/CONTROLLER_REPO",
+  "bot": "APP_B_SLUG[bot]",
+  "sourceBot": "APP_A_SLUG[bot]",
+  "pairs": [
+    {
+      "id": "project-1",
+      "source": "A_OWNER/A_REPO",
+      "target": "B_OWNER/B_REPO"
+    }
+  ]
+}

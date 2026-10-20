@@ -1,4 +1,4 @@
-name: Notify controller on contribution events
+name: Notify contribution bridge
 on:
   push:
     branches: [main]

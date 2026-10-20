@@ -4,6 +4,8 @@
 
 A và B là hai repo private ở hai organization. Developer làm việc tại A; maintainer B quyết định review và merge. B/main là source of truth. Bot đồng bộ lịch sử đã được B chấp nhận về A/main; developer chỉ clone/pull repo A.
 
+Một controller hỗ trợ nhiều cặp repo bằng `bridge.config.json`. Các bước dưới đây mô tả một cặp; mục “Dùng chung cho 7 cặp repo” chỉ rõ cách mở rộng mà vẫn dùng ba App.
+
 Cơ chế gồm:
 
 - **GitHub App:** danh tính và quyền truy cập.
@@ -31,7 +33,7 @@ Bộ mã triển khai nằm ngay trong thư mục [templates](templates) của r
 | Bộ mẫu | Copy tới đâu |
 |---|---|
 | [templates/controller](templates/controller) | Toàn bộ nội dung vào root repo controller, gồm cả `.github` và `.gitignore` |
-| [Workflow notifier của B](templates/B/.github/workflows/notify-controller.yml) | `.github/workflows/notify-controller.yml` tại repo B |
+| [Workflow notifier dùng chung A/B](templates/notifier/.github/workflows/notify-controller.yml) | `.github/workflows/notify-controller.yml` tại repo B, sau đó đồng bộ về A |
 | Repo A | Nhận cùng workflow notifier qua đồng bộ B/main → A/main; đặt credential dispatch tại A |
 
 Đây là source và workflow hoàn chỉnh, cần thay placeholder và cấu hình App/secrets trước khi bật. Các workflow được đặt dưới `templates/` nên không tự chạy trong repo tài liệu.
@@ -46,7 +48,7 @@ flowchart LR
     EB["Sự kiện PR / review / comment<br/>hoặc push B/main"] --> NB["Actions notifier B"]
     NA --> D["App dispatch<br/>Token Actions write trên controller"]
     NB --> D
-    D --> C["Actions tại repo controller<br/>policy → reconcile script"]
+    D --> C["Actions tại repo controller<br/>plan chọn cặp → tests → reconcile"]
     C --> AA["App A<br/>Token giới hạn repo A"]
     C --> AB["App B<br/>Token giới hạn repo B"]
     AA --> WA["Đọc PR A, ghi comment<br/>đồng bộ A/main, lưu recovery"]
@@ -102,7 +104,7 @@ Comment hội thoại của cặp PR được sao chép hai chiều. Native appr
 ```mermaid
 flowchart TD
     P["B/main có commit mới<br/>merge PR hoặc push trực tiếp"] --> N["Notifier B<br/>App dispatch gửi yêu cầu"]
-    N --> Q["Controller được xếp hàng<br/>policy pass → reconcile"]
+    N --> Q["Controller được xếp hàng theo cặp<br/>plan → tests pass → reconcile"]
     Q --> R["App B đọc B/main thực tế<br/>App A đọc A/main thực tế"]
     R --> E{"Hai SHA giống nhau?"}
     E -->|Có| S["Main đã đồng bộ"]
@@ -130,11 +132,13 @@ Ghi lại các giá trị trước khi cấu hình:
 | `A_OWNER/A_REPO` | Organization và tên repo A |
 | `B_OWNER/B_REPO` | Organization và tên repo B |
 | `B_OWNER/CONTROLLER_REPO` | Repo controller do B quản lý |
-| `APP_A_SLUG` | Slug trong URL `github.com/apps/<slug>` của App A; giữ hậu tố `[bot]` đã có trong script |
-| `APP_B_SLUG` | Slug trong URL `github.com/apps/<slug>` của App B; giữ hậu tố `[bot]` đã có trong script |
+| `APP_A_SLUG` | Slug trong URL `github.com/apps/<slug>` của App A; giữ hậu tố `[bot]` đã có trong registry |
+| `APP_B_SLUG` | Slug trong URL `github.com/apps/<slug>` của App B; giữ hậu tố `[bot]` đã có trong registry |
 | Nhánh chính | `main` tại cả ba repo |
 
 Các tên trên là placeholder, cần thay bằng giá trị thật trong cấu hình và code.
+
+Tên workflow trong bộ mẫu là **Contribution bridge controller** và **Notify contribution bridge**. Có thể đặt tên ba App theo tổ chức, ví dụ `<ORG>-Contribution-Sync`, `<ORG>-Contribution-Transport` và `<ORG>-Contribution-Dispatch`; điền slug thực tế GitHub cấp vào registry. Một bộ ba App dùng chung cho các cặp repo, không đặt tên App theo từng project.
 
 Yêu cầu:
 
@@ -231,6 +235,8 @@ Sau khi copy, cấu trúc tại root controller là:
 
 ```text
 .github/workflows/controller.yml
+bridge.config.json
+scripts/bridge-config.mjs
 scripts/pr-bridge.mjs
 scripts/pr-bridge-policy.mjs
 scripts/pr-bridge-reviews.mjs
@@ -241,29 +247,34 @@ tests/*.test.mjs
 
 | File | Chức năng |
 |---|---|
+| [bridge.config.json](templates/controller/bridge.config.json) | Khai báo các cặp repo A↔B và danh tính App dùng chung |
+| [scripts/bridge-config.mjs](templates/controller/scripts/bridge-config.mjs) | Kiểm tra cấu hình, chọn đúng cặp từ sự kiện và tạo matrix cho workflow |
 | [scripts/pr-bridge.mjs](templates/controller/scripts/pr-bridge.mjs) | Đọc trạng thái, chuyển Git objects/refs, gọi API PR/comment và đồng bộ main |
 | [scripts/pr-bridge-policy.mjs](templates/controller/scripts/pr-bridge-policy.mjs) | Giới hạn mutation/ref; quyết định pending, accepted, rejected |
 | [scripts/pr-bridge-reviews.mjs](templates/controller/scripts/pr-bridge-reviews.mjs) | Đưa review đã submit và nội dung findings của B về A |
 | [scripts/pr-bridge-comments.mjs](templates/controller/scripts/pr-bridge-comments.mjs) | Sao chép comment hai chiều, ghi nguồn và chống lặp |
 | [.github/workflows/controller.yml](templates/controller/.github/workflows/controller.yml) | Chạy kiểm tra và cấp token cho job reconcile |
-| [tests](templates/controller/tests) | 43 test: policy/boundary, nội dung review/comment, Git recovery/lease thật và orchestration với Git/API giả lập; không cần token hay gọi GitHub |
+| [tests](templates/controller/tests) | 50 test: chọn cặp trong cấu hình 7 repo, token scope, policy/boundary, nội dung review/comment, Git recovery/lease thật và orchestration với Git/API giả lập; không cần token hay gọi GitHub |
 
-Trong `scripts/pr-bridge.mjs`, thay các placeholder ở năm hằng đầu file:
+Trong `bridge.config.json`, thay placeholder; mỗi phần tử `pairs` là một cặp repo. Không sửa script theo từng repo:
 
-```javascript
-const source = 'A_OWNER/A_REPO';
-const target = 'B_OWNER/B_REPO';
-const bot = 'APP_B_SLUG[bot]';
-const sourceBot = 'APP_A_SLUG[bot]';
-const controllerRepo = 'B_OWNER/CONTROLLER_REPO';
+```json
+{
+  "controllerRepo": "B_OWNER/CONTROLLER_REPO",
+  "bot": "APP_B_SLUG[bot]",
+  "sourceBot": "APP_A_SLUG[bot]",
+  "pairs": [
+    { "id": "project-1", "source": "A_OWNER/A_REPO", "target": "B_OWNER/B_REPO" }
+  ]
+}
 ```
 
 Chỉ ba file dưới đây chứa cấu hình môi trường cần thay. Các module còn lại và fixture tests dùng dữ liệu giả, không cần đổi.
 
 | File | Placeholder phải thay ở mọi vị trí trong file |
 |---|---|
-| `scripts/pr-bridge.mjs` | `A_OWNER`, `A_REPO`, `B_OWNER`, `B_REPO`, `CONTROLLER_REPO`, `APP_A_SLUG`, `APP_B_SLUG` |
-| `.github/workflows/controller.yml` | `A_OWNER`, `A_REPO`, `B_OWNER`, `B_REPO`, `CONTROLLER_REPO` |
+| `bridge.config.json` | `A_OWNER`, `A_REPO`, `B_OWNER`, `B_REPO`, `CONTROLLER_REPO`, `APP_A_SLUG`, `APP_B_SLUG` |
+| `.github/workflows/controller.yml` | `B_OWNER`, `CONTROLLER_REPO`; tên repo trong token lấy từ cấu hình đã kiểm tra |
 | Notifier tại B ở mục 6, sau đó đồng bộ sang A | `A_OWNER`, `A_REPO`, `B_OWNER`, `B_REPO`, `CONTROLLER_REPO` |
 
 Giữ nguyên tên variable/secret và biến môi trường; nhập Client ID/PEM tại Settings theo mục 4, không điền credential vào code. Không thay `SOURCE_TOKEN`, `BRIDGE_APP_TOKEN` hoặc các biểu thức `${{ ... }}` bằng token cụ thể.
@@ -272,11 +283,11 @@ Workflow controller mẫu đã cấu hình:
 
 1. Trigger `workflow_dispatch` nhận yêu cầu từ notifier A/B; lịch mỗi 6 giờ, phút 17 UTC, chỉ làm dự phòng nếu một sự kiện bị bỏ lỡ. Không dùng lịch làm đường chạy chính.
 2. Inputs tùy chọn `source_repo`, `source_sha`, `source_run_id`, `source_event`, `source_pr` để truy vết notifier; không dùng SHA/input làm lệnh merge hoặc thay cho trạng thái PR và B/main thực tế.
-3. Job `policy` chạy riêng khi code controller thay đổi qua push/PR, không cấp key và không reconcile từ các event đó. Với schedule/dispatch, chạy tests ở bước đầu trong chính job `reconcile`, trước khi tạo token App; không cần thêm một runner chỉ để chạy policy.
-4. Job reconcile chỉ chạy khi `BRIDGE_ENABLED == 'true'`, repo đúng controller, ref `refs/heads/main`, event là schedule hoặc workflow_dispatch.
-5. Checkout đúng `${{ github.sha }}` của event trên main tin cậy, với `persist-credentials: false`; tests và reconcile dùng cùng revision. `GITHUB_TOKEN` chỉ Contents read. Serialize các lượt reconcile, không hủy lượt đang chạy. Job policy dùng nhóm concurrency khác, không thay mất reconcile đang chờ.
+3. Job `policy` chạy riêng khi code controller thay đổi qua push/PR, không cấp key và không reconcile từ các event đó. Với schedule/dispatch, job `plan` không có App secrets đọc registry và chọn cặp. Event chọn đúng một cặp; schedule hoặc Run workflow không nhập metadata chọn tất cả cặp.
+4. Job plan chỉ chạy khi `BRIDGE_ENABLED == 'true'`, repo đúng controller, ref `refs/heads/main`, event là schedule hoặc workflow_dispatch. Repo ngoài registry hoặc metadata không hợp lệ làm plan Fail, chưa tạo token.
+5. Checkout đúng `${{ github.sha }}` của event trên main tin cậy, với `persist-credentials: false`; plan, tests và reconcile dùng cùng revision. `GITHUB_TOKEN` chỉ Contents read. Matrix tạo job `Reconcile <id>` riêng cho mỗi cặp được chọn, có concurrency theo id và `fail-fast: false`: một cặp lỗi không hủy cặp khác, không hủy lượt đang chạy của cùng cặp. Job policy không dùng chung nhóm concurrency.
 6. Dùng `actions/create-github-app-token`, pin action bằng commit SHA đã kiểm tra. Token App A chỉ repo A với Contents/Pull requests/Workflows write; token App B chỉ repo B với Contents/Pull requests write.
-7. Truyền token App A qua `SOURCE_TOKEN`, App B qua `BRIDGE_APP_TOKEN`, rồi chạy `node scripts/pr-bridge.mjs`.
+7. Mỗi job chạy tests trước khi tạo token. Truyền token App A qua `SOURCE_TOKEN`, App B qua `BRIDGE_APP_TOKEN`, id cặp qua `BRIDGE_PAIR_ID`, rồi chạy cùng `node scripts/pr-bridge.mjs`. Script đọc lại đúng cặp từ registry.
 8. Inputs notifier được truyền thành `TRIGGER_SOURCE_REPO`, `TRIGGER_SOURCE_SHA`, `TRIGGER_SOURCE_RUN_ID`, `TRIGGER_SOURCE_EVENT`, `TRIGGER_SOURCE_PR`; script xác thực đúng A/B, định dạng và loại sự kiện.
 
 Các guard của script phải còn hoạt động:
@@ -294,31 +305,61 @@ Các guard của script phải còn hoạt động:
 Trong clone controller đã thay placeholder, kiểm tra không còn placeholder và chạy tests:
 
 ```powershell
-Select-String -Path .\scripts\pr-bridge.mjs,.\.github\workflows\controller.yml -Pattern 'A_OWNER|A_REPO|B_OWNER|B_REPO|CONTROLLER_REPO|APP_A_SLUG|APP_B_SLUG'
+Select-String -Path .\bridge.config.json,.\.github\workflows\controller.yml -Pattern 'A_OWNER|A_REPO|B_OWNER|B_REPO|CONTROLLER_REPO|APP_A_SLUG|APP_B_SLUG'
 node --check scripts/pr-bridge.mjs
 node --test tests/*.test.mjs
 ```
 
-`Select-String` phải không trả về dòng nào; tests phải pass 43/43. Script dùng Node.js built-in modules, không có bước `npm install`. Các test orchestration không thay thế nghiệm thu API/quyền thật trên GitHub.
+`Select-String` phải không trả về dòng nào; tests phải pass 50/50. Script dùng Node.js built-in modules, không có bước `npm install`. Các test orchestration không thay thế nghiệm thu API/quyền thật trên GitHub.
 
 ```powershell
-git add .github scripts tests .gitignore
+git add .github bridge.config.json scripts tests .gitignore
 git commit -m "Configure contribution controller for A and B"
 git push -u origin main
 ```
 
-Kiểm tra job policy thành công rồi bật `BRIDGE_ENABLED=true`. Maintainer B chạy **Actions → Isolated bridge - B decides → Run workflow → main** lần đầu, kiểm tra đúng repo/token scope và SHA hai main.
+Kiểm tra job policy thành công rồi bật `BRIDGE_ENABLED=true`. Maintainer B chạy **Actions → Contribution bridge controller → Run workflow → main** lần đầu, kiểm tra đúng repo/token scope và SHA hai main.
+
+### Dùng chung cho 7 cặp repo
+
+Giữ **3 GitHub App, 1 repo controller, 1 bộ script và 1 workflow controller**. App A được chọn các repo A; App B được chọn các repo B; App Dispatch vẫn chỉ cài trên repo controller. Một installation có thể được cấp nhiều repo, nhưng mỗi token chạy reconcile bị thu hẹp về đúng một repo A hoặc B của cặp đang xử lý. [Installation access token scope](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/authenticating-as-a-github-app-installation).
+
+Thay danh sách `pairs` trong registry bằng 7 mapping thực tế:
+
+```json
+"pairs": [
+  { "id": "project-1", "source": "A_OWNER/project-1", "target": "B_OWNER/project-1" },
+  { "id": "project-2", "source": "A_OWNER/project-2", "target": "B_OWNER/project-2" },
+  { "id": "project-3", "source": "A_OWNER/project-3", "target": "B_OWNER/project-3" },
+  { "id": "project-4", "source": "A_OWNER/project-4", "target": "B_OWNER/project-4" },
+  { "id": "project-5", "source": "A_OWNER/project-5", "target": "B_OWNER/project-5" },
+  { "id": "project-6", "source": "A_OWNER/project-6", "target": "B_OWNER/project-6" },
+  { "id": "project-7", "source": "A_OWNER/project-7", "target": "B_OWNER/project-7" }
+]
+```
+
+Tên repo hai bên không cần giống nhau. `id` duy nhất và ổn định vì dùng làm khóa hàng đợi; một repo chỉ được thuộc một cặp. Controller không được nằm trong các cặp.
+
+Để thêm một cặp:
+
+1. Tạo repo A private rỗng; B có sẵn lịch sử. Thêm repo mới vào **Only select repositories** của App tương ứng, giữ các repo đã chọn trước đó.
+2. Bootstrap A từ đúng B/main theo mục 3; làm riêng từng cặp, không khởi tạo lịch sử A độc lập.
+3. Thêm mapping vào `bridge.config.json`, commit tại controller và kiểm tra policy.
+4. Cấu hình dispatch secret/variable ở cả repo A và B của cặp mới. Cài notifier mẫu tại B, thay A/B bằng tên của cặp đó và giữ cùng endpoint controller; bot đưa notifier về A. Mỗi repo cần notifier, không cần bản sao controller script.
+5. Mở PR tại A mới. Controller phải chỉ có một job `Reconcile <id>` cho cặp này; B merge xong kiểm tra A/main = B/main và PR A đóng. Kiểm tra main của cặp khác không bị thay đổi.
+
+Các cặp khác nhau có thể chạy đồng thời theo giới hạn Actions. Các lượt của cùng cặp được serialize; số PR giống nhau giữa hai repo không gây ghép nhầm vì cấu hình, token, refs và API đều được giới hạn theo repo. Private key dùng chung trong controller vẫn đại diện cho toàn bộ repo được cấp cho App; việc giới hạn từng token không thu hẹp quyền của chính private key.
 
 ## 6. Setup workflow tại B và cách dùng A
 
-A và B dùng **cùng một file notifier** trong [templates/B](templates/B/.github/workflows/notify-controller.yml). Tên thư mục chỉ nơi cài đầu tiên; sau khi B merge, bot đưa đúng file đó về A. Không cần một bản YAML riêng cho A. Secrets/variables dispatch vẫn phải cấu hình riêng ở cả hai repo.
+A và B dùng **cùng một file notifier** trong [templates/notifier](templates/notifier/.github/workflows/notify-controller.yml). Cài tại B trước; sau khi B merge, bot đưa đúng file đó về A. Không cần một bản YAML riêng cho A. Secrets/variables dispatch vẫn phải cấu hình riêng ở cả hai repo.
 
-Tại B, copy [workflow notifier hoàn chỉnh](templates/B/.github/workflows/notify-controller.yml) vào `.github/workflows/notify-controller.yml`, sau khi controller đã chạy thành công bằng dispatch. Từ thư mục cha chứa `bridge-docs` và `controller`:
+Tại B, copy [workflow notifier hoàn chỉnh](templates/notifier/.github/workflows/notify-controller.yml) vào `.github/workflows/notify-controller.yml`, sau khi controller đã chạy thành công bằng dispatch. Từ thư mục cha chứa `bridge-docs` và `controller`:
 
 ```powershell
 git clone https://github.com/B_OWNER/B_REPO.git B
 New-Item -ItemType Directory -Force -Path .\B\.github\workflows
-Copy-Item -LiteralPath .\bridge-docs\templates\B\.github\workflows\notify-controller.yml -Destination .\B\.github\workflows\notify-controller.yml
+Copy-Item -LiteralPath .\bridge-docs\templates\notifier\.github\workflows\notify-controller.yml -Destination .\B\.github\workflows\notify-controller.yml
 ```
 
 Thay `A_OWNER`, `A_REPO`, `B_OWNER`, `B_REPO`, `CONTROLLER_REPO` ở **mọi vị trí** trong notifier: job condition, allowlist, owner/repositories của token, URL API và summary. Không thay tên secret/variable.
@@ -468,7 +509,7 @@ Mỗi lượt xét PR đang mở và PR đóng được cập nhật trong 7 ng�
 
 Main sync chạy trước xử lý PR. Lỗi riêng của một cặp không cản cặp khác; run vẫn Fail và status PR ghi lỗi nếu API còn cho phép. Feedback quá dài chưa tự chia nhỏ: maintainer cần chia review/comment. Status accepted giữ merge commit làm mốc cố định, không bị sửa theo mọi lần B/main tiến lên.
 
-Lịch dự phòng hiện có 4 lượt/ngày, 1 runner mỗi lượt; event vẫn chạy ngay khi GitHub Actions xếp lịch được. Nếu mỗi lượt dưới một phút, lịch riêng tương đương khoảng 120 phút cho tháng 30 ngày, chưa tính event và thời gian dài hơn. GitHub làm tròn minutes theo job; quota được chia sẻ với workflow khác trong org. Theo dõi usage và budget thay vì coi tiết kiệm seat là miễn phí toàn bộ Actions. [Cách tính thời gian job](https://docs.github.com/en/actions/how-tos/monitor-workflows/view-job-execution-time), [quota Actions](https://docs.github.com/en/billing/concepts/product-billing/github-actions).
+Lịch dự phòng hiện có 4 lượt/ngày. Mỗi event dùng 1 job plan và 1 job reconcile của đúng cặp; không tạo 7 job reconcile nếu chỉ một repo có event. Schedule/Run workflow toàn bộ dùng 1 job plan + N job reconcile cho N cặp. Với 7 cặp và mỗi job dưới một phút, riêng lịch tương đương khoảng `4 × 30 × (1 + 7) = 960` phút cho tháng 30 ngày, chưa tính notifier, event, policy và job lâu hơn. GitHub làm tròn minutes theo job; quota được chia sẻ với workflow khác trong org. Có thể giảm tần suất fallback theo nhu cầu; đường trigger chính vẫn là event. Theo dõi usage và budget thay vì coi tiết kiệm seat là miễn phí toàn bộ Actions. [Cách tính thời gian job](https://docs.github.com/en/actions/how-tos/monitor-workflows/view-job-execution-time), [quota Actions](https://docs.github.com/en/billing/concepts/product-billing/github-actions).
 
 ### Hướng dẫn trong body PR để giữ nguyên identity
 

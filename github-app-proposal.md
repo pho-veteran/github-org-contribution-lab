@@ -67,7 +67,7 @@ Mỗi lượt chạy, Actions dùng private key trong secrets để tạo instal
 
 Hướng dẫn triển khai trung lập nằm trong [Setup GitHub App cho A và B](github-app-setup.md). A và B là hai repo code; **controller là repo private thứ ba**, do B quản lý. Không chuyển key vận chuyển code vào A hoặc job chạy contribution để giảm số repo.
 
-Bộ mã trung lập đã có ngay trong repo docs: [controller và tests](templates/controller), cùng [workflow notifier dùng cho A/B](templates/B/.github/workflows/notify-controller.yml). [File setup](github-app-setup.md) chỉ rõ nơi copy và thay placeholder. Bộ mã sau review có 43 tests; SHA triển khai và kết quả test thật được ghi ở mục kiểm chứng tương ứng. Notifier được đưa vào B/main tại `1985f3afc6992aa04fc3665465e32f10a97f0e69` rồi đồng bộ về A. Không công bố private key.
+Bộ mã trung lập đã có ngay trong repo docs: [controller và tests](templates/controller), cùng [workflow notifier dùng cho A/B](templates/notifier/.github/workflows/notify-controller.yml). [File setup](github-app-setup.md) chỉ rõ nơi copy và thay placeholder. Bộ mã hiện tại có 50 tests và registry cho nhiều cặp repo; SHA triển khai và kết quả test thật được ghi ở mục kiểm chứng tương ứng. Notifier của cặp đầu tiên được đưa vào B/main tại `1985f3afc6992aa04fc3665465e32f10a97f0e69` rồi đồng bộ về A. Không công bố private key.
 
 ### 2.1. Tạo hai App vận chuyển code và giới hạn quyền
 
@@ -103,6 +103,8 @@ App A đọc PR A, cập nhật comment/trạng thái và đồng bộ A/main. Q
 | Installation ID | `172913981` | `173234412` |
 | Repo được cài | `TF4-Phase3-TechX/bot-bridge-lab` | `Vihnnnn/bot-bridge-lab` |
 
+Sau lượt test nhiều repo, hai installation này được chọn thêm `bot-bridge-multi-lab` trong org tương ứng. App ID và installation ID không đổi; không tạo App mới. Mỗi job vẫn xin token chỉ cho repo của cặp đang xử lý.
+
 “Any account” chỉ cho phép chủ org khác cài App A; không tự cấp quyền cho App vào mọi org. Controller vẫn kiểm tra đúng installation, org và repo đã định trước.
 
 ### 2.3. Chạy Actions trong controller riêng
@@ -124,13 +126,14 @@ Các file đã triển khai trong controller:
 - [`scripts/pr-bridge-policy.mjs`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/blob/main/scripts/pr-bridge-policy.mjs): giới hạn API mutation, ref push và xử lý trạng thái.
 - [`scripts/pr-bridge-reviews.mjs`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/blob/main/scripts/pr-bridge-reviews.mjs): sao chép review đã submit và comment theo dòng của B về A.
 - [`scripts/pr-bridge-comments.mjs`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/blob/main/scripts/pr-bridge-comments.mjs): sao chép comment hội thoại hai chiều, giữ nguồn và chống vòng lặp.
-- [`tests`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/tree/main/tests): 43 test gồm policy/boundary, review, hội thoại, metadata, Git recovery/lease và orchestration. Các test orchestration dùng Git/API giả lập; bằng chứng chạy GitHub được ghi riêng.
+- [`bridge.config.json`](templates/controller/bridge.config.json) và [`scripts/bridge-config.mjs`](templates/controller/scripts/bridge-config.mjs): registry các cặp repo, chọn cặp và kiểm tra metadata trước khi tạo token.
+- [`tests`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/tree/main/tests): 50 test gồm registry 7 cặp, token scope, policy/boundary, review, hội thoại, metadata, Git recovery/lease và orchestration. Các test orchestration dùng Git/API giả lập; bằng chứng chạy GitHub được ghi riêng.
 
 Khi **B/main có push mới**, gồm merge PR và commit trực tiếp, workflow tại B tự dispatch controller. Không cần maintainer bấm Run workflow hoặc đợi lịch để đồng bộ B/main về A/main. GitHub nhận sự kiện ngay; thời điểm job bắt đầu và hoàn tất vẫn phụ thuộc hàng đợi Actions.
 
 Mở PR, thêm commit, sửa trạng thái PR, review hoặc comment tại A/B đều có notifier theo sự kiện. Lịch **mỗi 6 giờ, phút 17 UTC** chỉ là dự phòng, không phải đường chạy chính. Maintainer B có thể Run workflow khi cần phục hồi. Các lượt test tự động phải có chuỗi notifier → App dispatch → controller; run tay không chứng minh trigger tự động.
 
-Job `policy` chạy trên push/PR của controller. Với schedule/dispatch, job `reconcile` tự chạy tests trước khi tạo token, trên đúng SHA controller được checkout; không dùng thêm runner policy. Reconcile chỉ chạy trên main của đúng controller khi bật `BRIDGE_ENABLED`, các lượt chạy tuần tự. Policy có nhóm concurrency riêng. `GITHUB_TOKEN` chỉ Contents read; hai App tạo token giới hạn đúng một repo mỗi lượt. Không lưu PAT cá nhân vào Actions.
+Job `policy` chạy trên push/PR của controller. Với schedule/dispatch, job `plan` không có App secrets đọc registry: event chọn đúng một cặp, schedule hoặc dispatch không có metadata chọn tất cả. Mỗi job `Reconcile <id>` chạy tests trước khi tạo token, trên cùng SHA controller với plan. Reconcile chỉ chạy trên main của đúng controller khi bật `BRIDGE_ENABLED`; cùng cặp chạy tuần tự, khác cặp có thể chạy song song và không hủy nhau khi một job lỗi. `GITHUB_TOKEN` chỉ Contents read; hai App tạo token giới hạn đúng một repo mỗi lượt. Không lưu PAT cá nhân vào Actions.
 
 Job có key chỉ checkout main của controller do B quản lý. PR A được đọc như dữ liệu và Git objects, không checkout/chạy code, hook hoặc dependency từ contribution. CI chạy riêng không nhận key bridge; các action được pin bằng commit SHA.
 
@@ -545,3 +548,41 @@ Run xử lý merge nói trên được sự kiện reopen A đưa vào hàng đ�
 Kết thúc test, maintainer đóng B #28 để từ chối contribution đã viết lại lịch sử; A #16 tự đóng với `merged: false`. API xác nhận không có PR B trùng cặp, commit bị từ chối không vào main, hai main bằng nhau và workflow bridge cũ đã được bỏ ở cả hai repo. Notifier hiện tại vẫn có tại A và B.
 
 Các thay đổi còn lại được kiểm tra bằng test: ghép cặp theo bot/repo/branch thay vì marker trong body; giữ title/body do B chỉnh; giữ nguyên dòng code trong review/comment; cô lập lỗi từng cặp; không cập nhật lại comment accepted vì main có commit không liên quan. Chưa có lượt GitHub riêng cho từng nhánh kiểm thử này. Không chạy thêm squash/rebase trong lượt nghiệm thu này.
+
+### Nhiều repo dùng chung ba App — 20/10/2026
+
+Controller [`5d874fa`](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/commit/5d874faaa43ed1e262abcbbc59db15f3321e04bd) chuyển cấu hình repo ra registry. Một bộ script và một workflow xử lý các cặp được khai báo; không nhân bản controller theo số repo. [Setup cho 7 cặp](github-app-setup.md#dùng-chung-cho-7-cặp-repo) và [registry mẫu](templates/controller/bridge.config.json) dùng tên trung lập.
+
+Lab có hai cặp private, đều không phải fork:
+
+| ID trong registry | Repo A | Repo B |
+|---|---|---|
+| `lab` | [Vihnnnn/bot-bridge-lab](https://github.com/Vihnnnn/bot-bridge-lab) | [TF4-Phase3-TechX/bot-bridge-lab](https://github.com/TF4-Phase3-TechX/bot-bridge-lab) |
+| `multi-lab` | [Vihnnnn/bot-bridge-multi-lab](https://github.com/Vihnnnn/bot-bridge-multi-lab) | [TF4-Phase3-TechX/bot-bridge-multi-lab](https://github.com/TF4-Phase3-TechX/bot-bridge-multi-lab) |
+
+App A `5389681`, App B `5376504` và App Dispatch `5390691` đều là các App đã có. Hai installation vận chuyển được thêm repo thứ hai trong **Only select repositories**; App Dispatch vẫn chỉ cài tại controller. Key vận chuyển vẫn chỉ ở controller, mỗi repo A/B có dispatch secret để gọi cùng workflow.
+
+![App B hiện được chọn hai repo, giữ nguyên installation](proposal-images/multi-b-app-repos.png)
+
+API đã kiểm tra token App A/B của cặp mới chỉ liệt kê đúng repo mới. Dùng token đó đọc repo cũ cùng org trả HTTP 404. Đây là giới hạn token từng job; private key trong controller vẫn có thể xin token cho các repo khác đã cấp cho App.
+
+**Bootstrap và trigger:** tạo lịch sử B mới trước, dùng App B đọc và App A push cùng lịch sử sang A rỗng. Commit notifier tại B mới tự gọi [run 39387604652](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39387604652) — Success; plan chỉ chọn `multi-lab`, A nhận cùng notifier từ B/main.
+
+**PR và merge:** [A mới #1](https://github.com/Vihnnnn/bot-bridge-multi-lab/pull/1) tự tạo [B mới #1](https://github.com/TF4-Phase3-TechX/bot-bridge-multi-lab/pull/1) qua [run 39387749724](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39387749724) — Success. Maintainer B approve và dùng Create a merge commit.
+
+![App B cũ mở PR trên repo mới; maintainer B đã merge](proposal-images/multi-b-merged.png)
+
+**Reconcile:** các event review/merge/push B tự gọi controller. [Run từ B/main push 39387852252](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39387852252) — Success. API xác nhận:
+
+- A/main = B/main = `dc924c8f6d7bbef37494f5ba2082b3d4715f0da5`.
+- PR A #1 đóng; GitHub ghi nhận Merged vì commit feature đã nằm trong main. Bot không tạo merge commit riêng tại A.
+- Commit gốc `18c959899fcb4dc6541e7d21b5e19cf33c767c59` vẫn nằm trong lịch sử main; author/committer giống nhau ở A/B, author account là `vinh-xbrainn`.
+- Main cặp cũ giữ nguyên `701353e55dcebb402151da2c28d875f9f5a3873a`, không nhận code của cặp mới.
+
+![A mới nhận trạng thái accepted, merge SHA của B và source SHA gốc](proposal-images/multi-a-accepted.png)
+
+Bộ test **50/50 pass** gồm cấu hình giả lập 7 cặp: event từ từng A/B chỉ chọn đúng một cặp, lịch/manual chọn tất cả, repo/id trùng hoặc metadata không hợp lệ bị từ chối, token rộng hoặc token sai cặp bị chặn trước Git push. Nghiệm thu GitHub thật trong lượt này dùng **2 cặp**, không phải 7 cặp thật.
+
+Lượt kiểm tra toàn bộ [run 39387962205](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39387962205) được maintainer dispatch không truyền metadata. Job plan chọn cả hai cặp; `Reconcile lab` và `Reconcile multi-lab` bắt đầu cùng lúc, đều Success. Hai main của mỗi cặp vẫn giữ đúng SHA riêng sau lượt chạy. Đây là test matrix nhiều cặp; bằng chứng trigger tự động là các run theo sự kiện nêu phía trên.
+
+![Một workflow và một bộ script xử lý đồng thời hai cặp repo](proposal-images/multi-controller-matrix.png)

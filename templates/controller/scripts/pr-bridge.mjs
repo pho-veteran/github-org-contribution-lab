@@ -5,14 +5,10 @@ import { fileURLToPath } from 'node:url';
 import { mainSyncDecision, mainSyncPush, pairDecision, assertMutation, assertPush, notificationMetadata } from './pr-bridge-policy.mjs';
 import { reviewFeedback, reviewSummary } from './pr-bridge-reviews.mjs';
 import { conversationCopies } from './pr-bridge-comments.mjs';
+import { loadConfig, pairConfig } from './bridge-config.mjs';
 
-const source = 'A_OWNER/A_REPO';
-const target = 'B_OWNER/B_REPO';
-const bot = 'APP_B_SLUG[bot]';
-const sourceBot = 'APP_A_SLUG[bot]';
-const controllerRepo = 'B_OWNER/CONTROLLER_REPO';
 export async function runBridge({
-  config = { source, target, bot, sourceBot, controllerRepo },
+  config,
   env = process.env, fetchImpl = fetch, spawnImpl = spawnSync, now = Date.now(),
 } = {}) {
 const { source, target, bot, sourceBot, controllerRepo } = config;
@@ -281,7 +277,7 @@ finally {
 return report;
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const report = await runBridge();
+  const report = await runBridge({ config: pairConfig(loadConfig(), process.env.BRIDGE_PAIR_ID) });
   console.log(JSON.stringify(report, null, 2));
   process.exitCode = report.passed ? 0 : 1;
 }

@@ -14,7 +14,7 @@ Team ở org A cần gửi code vào private repo của org B, giữ tác giả 
 
 Các ràng buộc:
 
-- Không thêm developer A vào B. Commit đóng góp phải giữ nguyên SHA, author và committer khi vận chuyển và khi vào main. B chỉ dùng **Create a merge commit**; không hỗ trợ squash/rebase.
+- Không thêm developer A vào B. Commit đóng góp phải giữ nguyên SHA, author và committer khi vận chuyển và khi vào main. Bot ghi trong body PR yêu cầu B chọn **Create a merge commit**, không squash/rebase PR contribution; không khóa phương thức merge bằng repo settings hoặc branch protection.
 - B là source of truth và quyết định merge. A/main là bản đồng bộ từ B/main; member A chỉ làm feature branch, mở PR, rồi pull kết quả từ repo A.
 - Hai org dùng GitHub Free. Lab kiểm chứng luồng trên private repo, không đo hóa đơn Team. Branch protection cho private repo chưa được enforce; cấu hình cần bổ sung được ghi tại mục 2.4.
 - Link repo/PR/Actions private cần tài khoản có quyền truy cập. Các ảnh trong tài liệu public là ảnh của lượt lab đã được công bố.
@@ -67,7 +67,7 @@ Mỗi lượt chạy, Actions dùng private key trong secrets để tạo instal
 
 Hướng dẫn triển khai trung lập nằm trong [Setup GitHub App cho A và B](github-app-setup.md). A và B là hai repo code; **controller là repo private thứ ba**, do B quản lý. Không chuyển key vận chuyển code vào A hoặc job chạy contribution để giảm số repo.
 
-Bộ mã trung lập đã có ngay trong repo docs: [controller và tests](templates/controller), cùng [workflow notifier dùng cho A/B](templates/B/.github/workflows/notify-controller.yml). [File setup](github-app-setup.md) chỉ rõ nơi copy và thay placeholder. Controller hiện tại là `bbddfdc8edb123a32fc4522e38be6ff14646a8b5`, có 26 tests; notifier được đưa vào B/main tại `1985f3afc6992aa04fc3665465e32f10a97f0e69` rồi đồng bộ về A. Không công bố private key.
+Bộ mã trung lập đã có ngay trong repo docs: [controller và tests](templates/controller), cùng [workflow notifier dùng cho A/B](templates/B/.github/workflows/notify-controller.yml). [File setup](github-app-setup.md) chỉ rõ nơi copy và thay placeholder. Controller hiện tại là `96fe79080f1eacf45de82bcb72119923df92c260`, có 26 tests; notifier được đưa vào B/main tại `1985f3afc6992aa04fc3665465e32f10a97f0e69` rồi đồng bộ về A. Không công bố private key.
 
 ### 2.1. Tạo hai App vận chuyển code và giới hạn quyền
 
@@ -198,7 +198,7 @@ Tại B → **Settings → Branches → Add classic branch protection rule**, pa
 
 Chỉ yêu cầu review/CI chưa chặn bot merge sau khi checks pass. Danh sách được cập nhật main phải loại App B; hạn chế push cũng áp dụng khi merge PR. [Cấu hình protection](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/managing-a-branch-protection-rule), [giới hạn người push](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches#restrict-who-can-push-to-matching-branches).
 
-Chỉ bật **Allow merge commits**, tắt **Allow squash merging** và **Allow rebase merging**. Không bật rule linear history vì không tương thích với merge commit. Đề xuất tắt auto-merge, không dùng merge queue trong luồng này. Nếu có release branch hoặc tag cần bảo vệ, bổ sung rule cho các ref đó; rule main không bảo vệ mọi ref.
+Body PR bot tạo có phần **Merge instruction: preserve contributor identity**, yêu cầu maintainer chọn **Create a merge commit** để giữ commit gốc. Không yêu cầu tắt squash/rebase trong repo settings hoặc thêm branch protection để ép phương thức merge tại B. Đây là hướng dẫn cho người merge, không phải cơ chế ngăn chặn; nếu maintainer chọn phương thức khác, controller chỉ phát hiện thiếu commit gốc sau merge. Các guard quyền bot và bảo vệ B/main ở trên vẫn là phần riêng. Nếu có release branch hoặc tag cần bảo vệ, bổ sung rule cho các ref đó; rule main không bảo vệ mọi ref.
 
 **A/main: chỉ App A đồng bộ từ B**
 
@@ -292,9 +292,9 @@ Bản hiện tại đọc B/main thực tế ở mỗi lượt reconcile. Nếu 
 
 Lượt thử ngày 20/10/2026: [A #13](https://github.com/Vihnnnn/bot-bridge-lab/pull/13) → [B #26](https://github.com/TF4-Phase3-TechX/bot-bridge-lab/pull/26) được squash thành commit `ac93dd547195067cc988534e82f3c04ef1408d27`. A/main đã đồng bộ đúng SHA này và PR A đóng, nhưng author chính của commit kết quả là `techx-vihnnnn-bridge-lab[bot]`; `vinh-xbrainn` chỉ được ghi trong `Co-authored-by`. **Lượt thử không đạt constraint identity**, không phải evidence nghiệm thu luồng được hỗ trợ.
 
-Lượt rebase [A #14](https://github.com/Vihnnnn/bot-bridge-lab/pull/14) / [B #27](https://github.com/TF4-Phase3-TechX/bot-bridge-lab/pull/27) đã dừng trước khi merge. Không công bố kết quả rebase thành công. Rebase có thể giữ author nhưng thay SHA và committer; cấu hình bàn giao chỉ dùng merge commit để giữ nguyên commit gốc.
+Lượt rebase [A #14](https://github.com/Vihnnnn/bot-bridge-lab/pull/14) / [B #27](https://github.com/TF4-Phase3-TechX/bot-bridge-lab/pull/27) đã dừng trước khi merge. Không công bố kết quả rebase thành công. Rebase có thể giữ author nhưng thay SHA và committer; hướng dẫn bàn giao yêu cầu người merge dùng merge commit để giữ nguyên commit gốc.
 
-B đã tắt squash/rebase và giữ merge commit. Controller đã bỏ acceptance dựa riêng vào head khớp PR B; 26 test kiểm tra cả trường hợp commit gốc bị viết lại. Lịch sử lượt squash đã chạy được giữ lại để truy vết, không viết lại B/main để che kết quả thử.
+B đã bật lại squash/rebase; không khóa phương thức merge. Yêu cầu giữ identity được ghi trong body PR để maintainer thực hiện. Controller đã bỏ acceptance dựa riêng vào head khớp PR B; 26 test kiểm tra cả trường hợp commit gốc bị viết lại. Lịch sử lượt squash đã chạy được giữ lại để truy vết, không viết lại B/main để che kết quả thử.
 
 [CI controller 39381361482](https://github.com/TF4-Phase3-TechX/bot-bridge-controller/actions/runs/39381361482) đã pass bản guard identity mới.
 - CI contribution Success chỉ nói code pass kiểm tra. Notifier Success chỉ nói đã gửi yêu cầu; cần xem job `reconcile` trong repo controller, SHA trước/sau và trạng thái từng cặp PR. `pending`, `rejected` hoặc `blocked-workflow-change` không đồng nghĩa bot đã mở PR mới hay merge code.

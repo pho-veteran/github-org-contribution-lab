@@ -142,7 +142,7 @@ Yêu cầu:
 2. Actions được bật tại A, B và controller; chính sách org cho phép các action sử dụng trong workflow.
 3. A/main và B/main ban đầu có cùng lịch sử Git, ưu tiên cùng SHA. Khởi tạo A từ lịch sử B bằng tài khoản được phép đọc B và ghi A; không tạo hai initial commit độc lập.
 4. A/main là bản phản chiếu của B/main. Nếu A/main lệch, controller lưu SHA cũ vào `recovery/a-main-<SHA>` và thay A/main bằng B/main với atomic push và force-with-lease. Không tự giải quyết conflict trên feature branch.
-5. B chỉ bật **Allow merge commits**; tắt **Allow squash merging** và **Allow rebase merging** tại Settings → General → Pull Requests. Maintainer dùng **Create a merge commit**. Không bật rule yêu cầu linear history vì rule đó không tương thích với merge commit.
+5. Bot ghi trong body PR yêu cầu maintainer chọn **Create a merge commit** để giữ nguyên SHA, author và committer của developer; không squash/rebase PR contribution này. Đây là quy ước cho người merge, không yêu cầu tắt phương thức merge trong repo settings hoặc thêm branch protection để ép phương thức merge tại B. Chính sách bảo vệ B/main khỏi bot push/merge là phần riêng bên dưới.
 6. Tải source bằng **Code → Download ZIP** hoặc clone repo tài liệu này. Máy chuẩn bị có Git và Node.js 24; các lệnh copy bên dưới dùng PowerShell. GitHub Actions chạy trên Ubuntu và dùng Node.js có sẵn trên runner.
 
 Author/email trong Git có thể tự khai báo. Giữ metadata không chứng minh danh tính người tạo commit; nếu cần xác thực, yêu cầu ký commit và kiểm tra signer.
@@ -390,7 +390,7 @@ Nếu dùng ruleset thay cho classic protection, kiểm tra phạm vi từng rul
 | A/B comment | Notifier nơi phát sinh comment tự dispatch | Bản sao có tác giả/nguồn, không lặp vô hạn |
 | B approve | Notifier B tự dispatch theo review | A thấy bản sao review; chưa đồng bộ code vào main |
 | B tạo merge commit | Push B/main tự dispatch | A/main bằng B/main; PR A đóng khi source head gốc và kết quả merge nằm trong main |
-| B viết lại commit ngoài cấu hình cho phép | Lượt reconcile | `identity-not-preserved` nếu head khớp PR đã merge nhưng commit gốc thiếu trong main; không đánh dấu accepted hoặc đóng PR A còn mở |
+| B squash/rebase trái hướng dẫn trong body PR | Lượt reconcile | `identity-not-preserved` nếu head khớp PR đã merge nhưng commit gốc thiếu trong main; không đánh dấu accepted hoặc đóng PR A còn mở |
 | A có revision mới chưa được B nhận | Lượt reconcile sau B merge | `new-commits-pending`; không đóng PR A còn mở; gửi phần việc còn lại qua PR mới |
 | Kết quả merge chưa có trong snapshot B/main | Lượt reconcile | `merge-result-not-in-main`; không đóng PR A; chạy lại hoặc kiểm tra B đã viết lại main |
 | B đóng PR không merge | Notifier B tự dispatch theo PR closed | Cặp PR bị rejected, A đóng không merge; contribution không vào main |
@@ -435,7 +435,9 @@ Không xóa branch đóng góp khi thay A/main. Local main có commit ngoài lu�
 - `pending` nghĩa là chờ quyết định B; `rejected` là B đóng không merge; `blocked-workflow-change` là contribution sửa workflow. Một run controller Success có thể chứa những trạng thái này và không mở PR mới.
 - GitHub Actions xếp hàng; nhiều sự kiện gần nhau có thể thay run đang chờ. Đây không phải cam kết chạy tức thời. Lượt còn lại đọc lại trạng thái hiện tại; lịch là dự phòng.
 
-### Giữ nguyên identity: chỉ dùng merge commit
+### Hướng dẫn trong body PR để giữ nguyên identity
+
+Body PR do bot tạo có phần **Merge instruction: preserve contributor identity**, yêu cầu người merge chọn **Create a merge commit**, không squash/rebase PR này. B vẫn quản lý các phương thức merge của repo; bộ setup không yêu cầu khóa phương thức bằng repo settings hoặc branch protection. Hướng dẫn không ngăn được maintainer chọn phương thức khác; việc giữ identity phụ thuộc vào người merge làm đúng hướng dẫn.
 
 Controller chỉ đánh dấu accepted khi PR B đã merge, `merge_commit_sha` thuộc lịch sử B/main đã đồng bộ **và source head gốc của A cũng thuộc lịch sử đó**. Cùng SHA nghĩa là cùng Git commit, bao gồm metadata author và committer; merge commit mới của maintainer không thay thế các commit đóng góp.
 
@@ -443,6 +445,6 @@ Chỉ khớp head ghi trên PR B, nội dung file hay `Co-authored-by` không đ
 
 Nếu A push revision khác chưa được nhận, trạng thái là `new-commits-pending` và PR A còn mở được giữ lại. Nếu kết quả merge chưa nằm trong snapshot main, trạng thái là `merge-result-not-in-main`, chờ lượt sau hoặc maintainer kiểm tra.
 
-Squash gộp nhiều commit thành một nên không giữ từng commit cùng identity riêng; với PR do App mở, author chính của commit squash có thể là App. `Co-authored-by` không tương đương giữ nguyên author/committer từng commit. Rebase có thể giữ author nhưng tạo SHA mới và cập nhật committer. Cấu hình này không hỗ trợ hai phương thức đó vì yêu cầu bảo toàn commit gốc. [Merge methods](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/about-merge-methods-on-github).
+Squash gộp nhiều commit thành một nên không giữ từng commit cùng identity riêng; với PR do App mở, author chính của commit squash có thể là App. `Co-authored-by` không tương đương giữ nguyên author/committer từng commit. Rebase có thể giữ author nhưng tạo SHA mới và cập nhật committer. Vì vậy hướng dẫn trong PR yêu cầu dùng merge commit cho contribution này, dù B vẫn có thể cho phép các phương thức khác ở cấp repo. [Merge methods](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/about-merge-methods-on-github).
 
 Theo dõi Actions minutes, notifier bị fail/skip và thời gian đồng bộ. PR/review/comment chạy theo sự kiện, không chờ polling. Lịch chỉ là dự phòng; nghiệm thu trigger bằng run notifier và controller có nguồn tương ứng, không dùng lượt chạy tay để chứng minh tự động.

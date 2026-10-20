@@ -19,15 +19,8 @@ Làm tại từng repo `XBrainVN/<repo>`:
 
 1. Repo A phải có `main` đã bootstrap từ B/main.
 2. Giữ các pipeline ứng dụng cũ disabled như mục 1.
-3. Vào **Settings → Secrets and variables → Actions**, đặt:
-
-| Loại | Tên | Giá trị |
-|---|---|---|
-| Secret | `CONTROLLER_DISPATCH_APP_PRIVATE_KEY` | Toàn bộ PEM của **Xora Contribution Dispatch** |
-| Variable | `CONTROLLER_DISPATCH_APP_CLIENT_ID` | Client ID của **Xora Contribution Dispatch** |
-
-4. Workflow mới ở A là **`.github/workflows/notify-controller.yml`**, dùng đúng code ở mục 4. **Không commit riêng tại A**: thêm file tại B, rồi controller đưa file về A ở mục 5.
-5. Sau khi file có tại A, vào **Actions → Notify contribution bridge** và kiểm tra workflow enabled. Nếu từng disable file này thì chọn **Enable workflow**.
+3. Workflow mới ở A là **`.github/workflows/notify-controller.yml`**, dùng đúng code ở mục 4. **Không commit riêng tại A**: thêm file tại B, rồi controller đưa file về A ở mục 5.
+4. Sau khi file có tại A, vào **Actions → Notify contribution bridge** và kiểm tra workflow enabled. Nếu từng disable file này thì chọn **Enable workflow**.
 
 Kết quả: developer mở PR hoặc push thêm commit vào PR tại A → notifier A gọi controller → controller mở/cập nhật PR tại B.
 
@@ -36,13 +29,10 @@ Kết quả: developer mở PR hoặc push thêm commit vào PR tại A → noti
 Làm tại từng repo `TechX/<repo>`:
 
 1. Giữ nguyên các pipeline build/test/deploy đang dùng.
-2. Đặt cùng secret `CONTROLLER_DISPATCH_APP_PRIVATE_KEY` và variable `CONTROLLER_DISPATCH_APP_CLIENT_ID` như bên A.
-3. Tạo branch, thêm file **`.github/workflows/notify-controller.yml`** bằng code ở mục 4.
-4. Mở PR để maintainer B review và merge.
+2. Tạo branch, thêm file **`.github/workflows/notify-controller.yml`** bằng code ở mục 4.
+3. Mở PR để maintainer B review và merge.
 
 Kết quả: merge PR hoặc push lên B/main → notifier B gọi controller → controller đồng bộ B/main về A/main. Pipeline B vẫn chạy theo trigger cũ; notifier là workflow riêng, không cần thêm job vào pipeline đang có.
-
-App Dispatch chỉ cài trên **controller**, không cài trên 14 repo A/B. Các repo A/B dùng Client ID + PEM của App đó để gọi controller.
 
 ## 4. Code workflow dùng ở cả hai bên
 
@@ -157,15 +147,14 @@ xora-resolve-be
 xora-resolve-agent
 ```
 
-## 5. Bật chạy lần đầu và kiểm tra
+## 5. Chạy lần đầu và kiểm tra
 
-Sau khi cả 7 PR thêm notifier tại B đã merge, A đã bootstrap, 3 App đã cài đúng repo và [credentials](github-app-secrets-variables.md) đã đủ:
+Khi controller đã được cấu hình và bật, cả 7 PR thêm notifier tại B đã merge và A đã bootstrap:
 
-1. Tại controller, đổi variable **`BRIDGE_ENABLED` thành `true`**.
-2. **Actions → Contribution bridge controller → Run workflow → main**, để trống inputs.
-3. Chờ đủ 7 job reconcile thành công. Kiểm tra A/main trùng B/main và A đã nhận file notifier.
-4. Kiểm tra tại A: notifier enabled, các pipeline ứng dụng vẫn disabled.
-5. Thử mở PR A → thêm commit → B nhận PR/commit → B **Create a merge commit** → notifier B tự chạy → A/main cập nhật → PR A đóng.
+1. **Actions → Contribution bridge controller → Run workflow → main**, để trống inputs.
+2. Chờ đủ 7 job reconcile thành công. Kiểm tra A/main trùng B/main và A đã nhận file notifier.
+3. Kiểm tra tại A: notifier enabled, các pipeline ứng dụng vẫn disabled.
+4. Thử mở PR A → thêm commit → B nhận PR/commit → B **Create a merge commit** → notifier B tự chạy → A/main cập nhật → PR A đóng.
 
 Sau lần khởi tạo, **không cần bấm Run workflow mỗi khi B merge**. Push B/main tự kích hoạt notifier; thời điểm chạy phụ thuộc hàng đợi Actions.
 

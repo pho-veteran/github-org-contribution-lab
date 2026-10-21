@@ -2,6 +2,8 @@
 
 A = `XBrainVN`, B = `TechX-Corp`.
 
+Hướng dẫn cho developer: [Team AI contribute và giảm lượt CI](ai-contribution-guide.md).
+
 - [Controller mẫu mới](https://github.com/pho-veteran/xora-contribution-controller) — bản đã test: [`ad8330c`](https://github.com/pho-veteran/xora-contribution-controller/tree/ad8330c43909277144e5368b1ee48ed21ff3bb9c).
 - [File notifier mới](templates/notifier/.github/workflows/notify-controller.yml).
 
